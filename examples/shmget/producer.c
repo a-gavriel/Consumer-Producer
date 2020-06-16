@@ -6,13 +6,13 @@
 int main() 
 { 
     printf("Enter the buffer's name: ");
-    char buffername [50];
+    char buffername [5]= "";
     scanf("%s", buffername);
     // ftok to generate unique key 
     key_t key = ftok(buffername,65); 
   
     // shmget returns an identifier in shmid 
-    int shmid = shmget(key,1024,0666|IPC_CREAT); 
+    int shmid = shmget(key,1024,0666); 
   
     // shmat to attach to shared memory 
     char *str = (char*) shmat(shmid,(void*)0,0); 
