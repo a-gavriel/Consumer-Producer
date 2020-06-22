@@ -10,11 +10,59 @@
 #include <sys/ipc.h> 
 #include <sys/types.h>
 #include <stdint.h>
+#include <getopt.h>
 
 #define MSGSIZE 16
 #define GLOB_SIZE 64
 
-int main(){ 
+char *app_name = NULL;
+int middleSeconds = 0;
+char *buffer_name = NULL;
+
+/**
+ * \brief Print help for this application
+ */
+void print_help(void)
+{
+	printf("\n Usage: %s [OPTIONS]\n\n", app_name);
+	printf("  Options:\n");
+	printf("   -h --help                 Print this help\n");
+	printf("   -b --buffer_name          Buffer name for attach the process\n");
+    printf("   -s --seconds              Middle time for random algorithm waiting time generator \n");
+	printf("\n");
+}
+
+
+int main(int argc, char *argv[]){ 
+
+    static struct option long_options[] = {
+		{"buffer_name", required_argument, 0, 'b'},
+		{"seconds", required_argument, 0, 's'},
+		{"help", no_argument, 0, 'h'},
+		{NULL, 0, 0, 0}
+	};
+    app_name = argv[0];
+    int value, option_index = 0, ret;	
+    /* Try to process all command line arguments */
+	while ((value = getopt_long(argc, argv, "b:s:h", long_options, &option_index)) != -1) {
+		switch (value) {
+			case 'b':
+				buffer_name = strdup(optarg);
+				break;
+			case 's':
+                sscanf(optarg, "%d", &middleSeconds);
+				break;
+			case 'h':
+				print_help();
+				return EXIT_SUCCESS;
+			default:
+				break;
+		}
+	}
+
+    printf("%s \n", buffer_name);
+    printf("%i \n", middleSeconds);
+
     /* name of the shared memory object */
     char buffer_name [10]= ""; 
     printf("Enter buffer name: ");
@@ -47,13 +95,17 @@ int main(){
     ptr = temp;
 
 
-    //For testing!
-    uint8_t value;
-    memcpy(&value,ptr+50,1); 
-    printf("Value read: %d\n", value);
+    // Sleep Section
 
-    memcpy(&value,ptr+51,1); 
-    printf("Value read: %d\n", value);
+
+
+    //For testing!
+    uint8_t value1;
+    memcpy(&value1,ptr+50,1); 
+    printf("Value read: %d\n", value1);
+
+    memcpy(&value1,ptr+51,1); 
+    printf("Value read: %d\n", value1);
 
     return 0; 
 } 
