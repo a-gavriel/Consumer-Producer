@@ -4,6 +4,7 @@
 #include <string.h>     // memcpy 
 #include <sys/shm.h>    // shm
 #include <sys/mman.h>   // mmap
+#include <fcntl.h>      // shared memory permission
 #include <stdint.h>     // for int variants
 
 #include "../include/randomGenerators.h"
