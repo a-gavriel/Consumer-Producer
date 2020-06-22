@@ -1,15 +1,11 @@
-#define _GNU_SOURCE
-#include <stdio.h> 
-#include <stdlib.h> 
-#include <string.h> 
-#include <fcntl.h> 
-#include <sys/shm.h> 
-#include <sys/stat.h> 
-#include <sys/mman.h>
-#include <unistd.h>
-#include <sys/ipc.h> 
-#include <sys/types.h>
-#include <stdint.h>
+#define _GNU_SOURCE     // mremap
+#include <stdio.h>      // standard input output
+#include <stdlib.h>     // EXIT_FAILURE
+#include <string.h>     // memcpy 
+#include <sys/shm.h>    // shm
+#include <sys/mman.h>   // mmap
+#include <fcntl.h>      // shared memory permission
+#include <stdint.h>     // for int variants
 
 #define MSGSIZE 16
 #define GLOB_SIZE 64
@@ -24,10 +20,10 @@ int main(){
     uint32_t SIZE = 1; 
   
     /* shared memory file descriptor */ /* create the shared memory object */
-    int shm_fd = shm_open(buffer_name, O_RDWR, 0666); 
+    int shm_fd = shm_open(buffer_name, O_RDONLY, 0666); 
   
     /* pointer to shared memory obect */
-    void* ptr = mmap(0, SIZE, O_RDWR, MAP_SHARED, shm_fd, 0); 
+    void* ptr = mmap(0, SIZE, PROT_READ, MAP_SHARED, shm_fd, 0); 
     if (ptr == MAP_FAILED){
         perror("MMAP FAILED, Error mmapping the file, Buffer hasn't been created!\n");
         return EXIT_FAILURE;
@@ -48,9 +44,12 @@ int main(){
 
 
     //For testing!
-    uint8_t value2 = 12;
-    memcpy(ptr+51,&value2,1); 
-    printf("Value written: %d\n", value2);
+    uint8_t value;
+    memcpy(&value,ptr+50,1); 
+    printf("Value read: %d\n", value);
+
+    memcpy(&value,ptr+51,1); 
+    printf("Value read: %d\n", value);
 
     return 0; 
 } 
