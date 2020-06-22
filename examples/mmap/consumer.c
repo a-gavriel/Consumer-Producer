@@ -11,13 +11,16 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <getopt.h>
+#include <sys/types.h>
+#include <stdbool.h>
 
 #define MSGSIZE 16
 #define GLOB_SIZE 64
 
 char *app_name = NULL;
-int middleSeconds = 0;
+int middleSeconds = -1;
 char *buffer_name = NULL;
+bool isAutoMode = false;
 
 /**
  * \brief Print help for this application
@@ -27,8 +30,9 @@ void print_help(void)
 	printf("\n Usage: %s [OPTIONS]\n\n", app_name);
 	printf("  Options:\n");
 	printf("   -h --help                 Print this help\n");
-	printf("   -b --buffer_name          Buffer name for attach the process\n");
-    printf("   -s --seconds              Middle time for random algorithm waiting time generator \n");
+	printf("   -b --buffer_name          Buffer name for attach the process, Need to be diferent to empty\n");
+    printf("   -s --seconds              Time in seconds for random algorithm waiting time generator, Need to be greater than zero \n");
+    printf("   -m --mode                 Execution Mode: M = manual | A = automatic \n");
 	printf("\n");
 }
 
@@ -39,12 +43,16 @@ int main(int argc, char *argv[]){
 		{"buffer_name", required_argument, 0, 'b'},
 		{"seconds", required_argument, 0, 's'},
 		{"help", no_argument, 0, 'h'},
+        {"mode", required_argument, 0, 'm'},
 		{NULL, 0, 0, 0}
 	};
     app_name = argv[0];
-    int value, option_index = 0, ret;	
+    app_name = app_name+2; //Delete ./ From the app Name
+    int pid = getpid();
+    int value, option_index = 0;	
+    char *mode = NULL;
     /* Try to process all command line arguments */
-	while ((value = getopt_long(argc, argv, "b:s:h", long_options, &option_index)) != -1) {
+	while ((value = getopt_long(argc, argv, "b:s:m:h", long_options, &option_index)) != -1) {
 		switch (value) {
 			case 'b':
 				buffer_name = strdup(optarg);
@@ -55,18 +63,32 @@ int main(int argc, char *argv[]){
 			case 'h':
 				print_help();
 				return EXIT_SUCCESS;
+            case 'm':
+                mode = strdup(optarg);
+                break;
 			default:
 				break;
 		}
 	}
+    if (buffer_name == NULL || strcmp("", buffer_name) == 0 || middleSeconds <= 0 || strcmp("", mode) == 0 || ( strcmp("A", mode) != 0 && strcmp("M", mode) != 0) )
+    {
+        printf("%s : %i - Please use -h to see right parameters format \n", app_name, pid);
+        return EXIT_FAILURE;
+    }
+
+    if( strcmp("A", mode) == 0)
+    {
+        isAutoMode = true;
+    }
+    else
+    {
+        isAutoMode = false;
+    }
+    
 
     printf("%s \n", buffer_name);
     printf("%i \n", middleSeconds);
-
-    /* name of the shared memory object */
-    char buffer_name [10]= ""; 
-    printf("Enter buffer name: ");
-    scanf("%s",buffer_name);
+    printf("%d \n", isAutoMode);
 
     /* the size (in bytes) of shared memory object */
     uint32_t SIZE = 1; 
