@@ -14,11 +14,13 @@
 #include <sys/types.h>
 #include <stdbool.h>
 
+#include "../include/randomGenerators.h"
+
 #define MSGSIZE 16
 #define GLOB_SIZE 64
 
 char *app_name = NULL;
-int middleSeconds = -1;
+double middleSeconds = -1;
 char *buffer_name = NULL;
 bool isAutoMode = false;
 
@@ -58,7 +60,7 @@ int main(int argc, char *argv[]){
 				buffer_name = strdup(optarg);
 				break;
 			case 's':
-                sscanf(optarg, "%d", &middleSeconds);
+                sscanf(optarg, "%lf", &middleSeconds);
 				break;
 			case 'h':
 				print_help();
@@ -87,7 +89,7 @@ int main(int argc, char *argv[]){
     
 
     printf("%s \n", buffer_name);
-    printf("%i \n", middleSeconds);
+    printf("%lf \n", middleSeconds);
     printf("%d \n", isAutoMode);
 
     /* the size (in bytes) of shared memory object */
