@@ -11,13 +11,12 @@
 #include <sys/types.h>
 #include <stdint.h>
 #include <getopt.h>
-#include <sys/types.h>
 #include <stdbool.h>
 #include <semaphore.h>
 #include <fcntl.h>          /* O_CREAT, O_EXEC          */
 
 #include "../include/randomGenerators.h"
-
+  
 #define MSGSIZE 16
 #define GLOB_SIZE 64
 
@@ -59,6 +58,7 @@ void print_help(void)
 bool ValidateFinalizerSignal()
 {
     //If finalizar global variable is 1 return true
+    return true;
 }
 
 /**
@@ -80,9 +80,38 @@ void ExitFromSpecialMessage()
 /**
  * Read Message from buffer
 */
-char *ReadMessage()
+char ReadMessage()
 {
+    int position = 0; 
+    char *tempBuffer = bufferPtr + GLOB_SIZE + (position * 16);
+    char producerId[4] = "";
+    *producerId = *tempBuffer;
+    *tempBuffer += 4;
+    char dateTime[8] = "";
+    *dateTime = *tempBuffer;
+    *tempBuffer += 8;
+    char magicNumber = *tempBuffer;
+    printf("Consumer PID: %s \n", producerId);
+    printf("DateTime: %s \n", dateTime);
+    printf("Magic Number: %c \n", magicNumber);
+    return magicNumber;
+}
 
+int RemapBuffer()
+{
+    uint8_t totmsgs;
+    memcpy(&totmsgs,bufferPtr,1); 
+    printf("Number of messages: %d\n", totmsgs);
+    uint32_t newSIZE = GLOB_SIZE + MSGSIZE*totmsgs; 
+
+    /* remap the shared memory object */
+    void* temp = mremap(bufferPtr, SIZE, newSIZE, MREMAP_MAYMOVE); 
+    if(temp == MAP_FAILED){
+        perror("REMAP FAILED, Error on mremap()");
+        return EXIT_FAILURE;
+    }
+    bufferPtr = temp;
+    return EXIT_SUCCESS;
 }
 
 int SyncBuffer()
@@ -106,23 +135,6 @@ int SyncBuffer()
     }
 }
 
-int RemapBuffer()
-{
-    uint8_t totmsgs;
-    memcpy(&totmsgs,bufferPtr,1); 
-    printf("Number of messages: %d\n", totmsgs);
-    uint32_t newSIZE = GLOB_SIZE + MSGSIZE*totmsgs; 
-
-    /* remap the shared memory object */
-    void* temp = mremap(bufferPtr, SIZE, newSIZE, MREMAP_MAYMOVE); 
-    if(temp == MAP_FAILED){
-        perror("REMAP FAILED, Error on mremap()");
-        return EXIT_FAILURE;
-    }
-    bufferPtr = temp;
-    return EXIT_SUCCESS;
-}
-
 
 void AutomatedConsumerProcess()
 {
@@ -132,7 +144,7 @@ void AutomatedConsumerProcess()
 void ManualConsumerProcess()
 {
     short int exitMode = 0;
-    char *message = NULL;
+    char magicNumber = 'a';
     while(flag)
     {
         if(ValidateFinalizerSignal())
@@ -144,7 +156,8 @@ void ManualConsumerProcess()
         {
             //Start Critical Region
             sem_wait(semBuffer);           
-            message = ReadMessage();
+            magicNumber = ReadMessage();
+            printf("%c", magicNumber);
             sem_post(semBuffer);
             //End Critical Region (Release Sem)
         }
