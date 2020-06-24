@@ -11,6 +11,7 @@ int main(){
     printf("Enter buffer name: ");
     scanf("%s",buffer_name);
 
+    /**
     int shm_fd = shm_open(buffer_name, O_RDONLY, 0666); 
 
     void* ptr = mmap(0, 1, PROT_READ, MAP_SHARED, shm_fd, 0); 
@@ -18,6 +19,7 @@ int main(){
         perror("MMAP FAILED, Error mmapping the file, Buffer hasn't been created!\n");
         return EXIT_FAILURE;
     }
+    **/
 
     shm_unlink(buffer_name); 
     printf("Closing the shm...\n");

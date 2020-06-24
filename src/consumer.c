@@ -14,6 +14,7 @@
 #include <stdbool.h>
 #include <semaphore.h>
 #include <fcntl.h>          /* O_CREAT, O_EXEC          */
+#include <time.h>
 
 #include "../include/randomGenerators.h"
   
@@ -32,6 +33,26 @@ uint32_t SIZE = 1;
 char *semBufferName = "sem_buffer";
 sem_t *semBuffer = NULL;
 // End Semaphore Region
+
+typedef struct Global_Var
+{
+    int buffer_message_size; //Use for the remap on the consumer and producer process
+    int active_consumers;
+    int active_productors;
+    int historical_consumers;
+    int historical_buffer_messages; //Historical count of messages inserted into the buffer
+    int historical_productor;
+    int buffer_count_message; //Carry the count of the message in the buffer in the instant t
+    int last_read_position;
+    int last_write_position;
+    int consumers_delete_by_key;
+    double total_cpu_time;  //Sumatory of all process CPU time (Producer and Consumers)
+    double total_wait_time; //Total Time wait by the process (producers and consumers) (poison and exponential generators )
+    double total_block_time; //Total Time blocked by semaphores (producers and consumers)
+    double total_kernel_time; //Total Time in Kernel mode (producers and consumers)
+    double total_user_time; //Total Time in user mode (producers and consumers)
+    short int finalize;
+} Global_Var;
 
 void InitializeSemaphores()
 {
@@ -169,6 +190,9 @@ void ManualConsumerProcess()
 }
 
 int main(int argc, char *argv[]){ 
+    clock_t begin = clock();
+
+    //Read command Line args
 
     static struct option long_options[] = {
 		{"buffer_name", required_argument, 0, 'b'},
@@ -236,22 +260,13 @@ int main(int argc, char *argv[]){
     {
         ManualConsumerProcess();
     }
-    
+      
+    clock_t end = clock();
+    double time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
 
-    
+    //Save statistics
 
-    // Sleep Section
-
-
-
-
-    //For testing!
-    //uint8_t value1;
-    //memcpy(&value1,bufferPtr+50,1); 
-    //printf("Value read: %d\n", value1);
-
-    //memcpy(&value1,bufferPtr+51,1); 
-    //printf("Value read: %d\n", value1);
+    //Release resources (mem, etc)
 
     return 0; 
 } 

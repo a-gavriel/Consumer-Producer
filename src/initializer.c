@@ -19,15 +19,27 @@
 //Begin Region Global Variables 
 char *app_name = NULL;
 char *buffer_name = NULL;
+int pid = 0;
 //End Region Global Varibales
 
 typedef struct Global_Var
 {
-    int buffer_message_size;
+    int buffer_message_size; //Use for the remap on the consumer and producer process
     int active_consumers;
-    int historical_consumers;
     int active_productors;
+    int historical_consumers;
+    int historical_buffer_messages; //Historical count of messages inserted into the buffer
     int historical_productor;
+    int buffer_count_message; //Carry the count of the message in the buffer in the instant t
+    int last_read_position;
+    int last_write_position;
+    int consumers_delete_by_key;
+    double total_cpu_time;  //Sumatory of all process CPU time (Producer and Consumers)
+    double total_wait_time; //Total Time wait by the process (producers and consumers) (poison and exponential generators )
+    double total_block_time; //Total Time blocked by semaphores (producers and consumers)
+    double total_kernel_time; //Total Time in Kernel mode (producers and consumers)
+    double total_user_time; //Total Time in user mode (producers and consumers)
+    short int finalize;
 } Global_Var;
 
 /**
@@ -54,7 +66,7 @@ int InitilizeSemaphores(int messageCount)
     return EXIT_SUCCESS;
 }
 
-int InitializeBuffers()
+int InitializeBuffers(int messageCount)
 { 
     char *buffer_name_global = malloc(strlen(buffer_name) + strlen(BUFFER_GLOB_SUFIX) + 2);
     if(buffer_name_global == NULL)
@@ -66,28 +78,47 @@ int InitializeBuffers()
     strcat(buffer_name_global, BUFFER_GLOB_SUFIX);
     printf("%s \n",buffer_name_global);
 
-    //Global Varibales Buffer
-    printf("A \n");
-    int shm_fd = shm_open(buffer_name_global, O_CREAT | O_RDWR, 0666);
-    printf("B \n");
+    //Global Variables Buffer   
+    // O_EXCL If the shared memory object already exist 
+    //shm_unlink(buffer_name_global); 
+    int shm_fd = shm_open(buffer_name_global, O_RDWR|O_CREAT|O_EXCL, 0);
     if (shm_fd == -1)
     {
+        printf("%s : %i - Error creating the Global Var Buffer \n", app_name, pid);
+        perror("Error creating the Shared Memory Object");
         return EXIT_FAILURE;
     } 
-    if(ftruncate(shm_fd, sizeof(Global_Var) == -1))
+    if(ftruncate(shm_fd, sizeof(Global_Var)) == -1)
     {
+        printf("%s : %i - Error creating the Global Var Buffer \n", app_name, pid);
+        perror("Error during truncate process");
         return EXIT_FAILURE;
     }
-    //TEST
-    Global_Var *ptr = (Global_Var *)mmap(0, sizeof(Global_Var), PROT_WRITE, MAP_SHARED, shm_fd, 0);
-    if (ptr == MAP_FAILED){
-        perror("MMAP FAILED, Error mmapping the file, Buffer wasn't created!\n");
+
+    Global_Var *ptr_buff_glob_var = (Global_Var *)mmap(NULL, sizeof(Global_Var), PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    if (ptr_buff_glob_var == MAP_FAILED){
+        printf("%s : %i - Error mapping the Global Var Buffer \n", app_name, pid);
+        perror("Error during mapping process");
         return EXIT_FAILURE;
     } 
-    printf("TTTT");
-    ptr -> active_consumers = 10;
-    printf("Active Consumers %i", ptr->active_consumers);
 
+    ptr_buff_glob_var->buffer_message_size = messageCount;
+    ptr_buff_glob_var->active_consumers = 0;
+    ptr_buff_glob_var->active_productors = 0;
+    ptr_buff_glob_var->consumers_delete_by_key = 0;
+    ptr_buff_glob_var->finalize = 0;
+    ptr_buff_glob_var->historical_buffer_messages =0;
+    ptr_buff_glob_var->historical_consumers = 0;
+    ptr_buff_glob_var->historical_productor = 0;
+    ptr_buff_glob_var->last_read_position = 0;
+    ptr_buff_glob_var->last_write_position = 0;
+    ptr_buff_glob_var->total_block_time = 0;
+    ptr_buff_glob_var->total_cpu_time = 0;
+    ptr_buff_glob_var->total_kernel_time = 0;
+    ptr_buff_glob_var->total_wait_time = 0;
+    ptr_buff_glob_var->total_user_time = 0;
+    ptr_buff_glob_var->buffer_count_message = 0;
+    munmap(ptr_buff_glob_var, sizeof(Global_Var));
     return EXIT_SUCCESS;
 }
 
@@ -106,7 +137,7 @@ void print_help(void)
 }
 
 int main(int argc, char *argv[]) { 
-static struct option long_options[] = {
+    static struct option long_options[] = {
 		{"buffer_name", required_argument, 0, 'b'},
 		{"size", required_argument, 0, 's'},
 		{"help", no_argument, 0, 'h'},
@@ -114,16 +145,18 @@ static struct option long_options[] = {
 	};
     app_name = argv[0];
     app_name = app_name+2; //Delete ./ From the app Name
-    int pid = getpid();
+    pid = getpid();
     int value, option_index = 0;	
     int message_count = 0;
     /* Try to process all command line arguments */
 	while ((value = getopt_long(argc, argv, "b:s:h", long_options, &option_index)) != -1) {
 		switch (value) {
 			case 'b':
+                //Read buffer message name
 				buffer_name = strdup(optarg);
 				break;
 			case 's':
+                //Read the number of message that user wants
                 sscanf(optarg, "%i", &message_count);
 				break;
 			case 'h':
@@ -138,45 +171,13 @@ static struct option long_options[] = {
         printf("%s : %i - Please use -h to see right parameters format \n", app_name, pid);
         return EXIT_FAILURE;
     }
-    InitilizeSemaphores(message_count);
-    InitializeBuffers();
-
-    /* name of the shared memory object */
-    char buffer_name [10]= ""; 
-    printf("Enter buffer name: ");
-    scanf("%s",buffer_name);
-    
-    /* the size (in bytes) of shared memory object */
-    printf("Enter the amount of messages the buffer will hold: " );
-    uint8_t totmsgs;
-    scanf("%" SCNu8, &totmsgs); 
-
-    uint32_t SIZE = GLOB_SIZE + MSGSIZE*totmsgs; 
-  
-    /* shared memory file descriptor */
-    int shm_fd; 
-  
-    /* pointer to shared memory obect */
-    void* ptr; 
-  
-    /* create the shared memory object */
-    shm_fd = shm_open(buffer_name, O_CREAT | O_RDWR, 0666); 
-  
-    /* configure the size of the shared memory object */
-    ftruncate(shm_fd, SIZE); 
-  
-    /* memory map the shared memory object */
-    ptr = mmap(0, SIZE, PROT_WRITE, MAP_SHARED, shm_fd, 0); 
-    if (ptr == MAP_FAILED){
-        perror("MMAP FAILED, Error mmapping the file, Buffer wasn't created!\n");
+    if(InitilizeSemaphores(message_count) == EXIT_FAILURE)
+    {
         return EXIT_FAILURE;
     }
-
-    // Writes the totmsgs in the beginning of the buffer
-    // dest , src , size
-    memcpy(ptr,&totmsgs,1);
-
-    // For testing!
-    value = 11;
-    memcpy(ptr+50,&value,1);
+    if(InitializeBuffers(message_count) == EXIT_FAILURE)
+    {
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
 } 
