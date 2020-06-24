@@ -1,15 +1,12 @@
-#include <stdio.h> 
-#include <stdlib.h> 
-#include <string.h> 
-#include <fcntl.h> 
-#include <sys/shm.h> 
-#include <sys/stat.h> 
-#include <sys/mman.h>
-#include <unistd.h>
-#include <sys/ipc.h> 
-#include <sys/types.h>
-#include <stdint.h>
-#include <inttypes.h>  // For scanf of uint8_t
+#include <stdio.h>      // standard input output
+#include <stdlib.h>     // EXIT_FAILURE
+#include <string.h>     // memcpy 
+#include <fcntl.h>      // shared memory permission
+#include <sys/shm.h>    // shm
+#include <sys/mman.h>   // mmap
+#include <unistd.h>     // ftruncate
+#include <stdint.h>     // for int variants
+#include <inttypes.h>   // For scanf of uint8_t
 
 #define MSGSIZE 16
 #define GLOB_SIZE 64
@@ -41,6 +38,10 @@ int main() {
   
     /* memory map the shared memory object */
     ptr = mmap(0, SIZE, PROT_WRITE, MAP_SHARED, shm_fd, 0); 
+    if (ptr == MAP_FAILED){
+        perror("MMAP FAILED, Error mmapping the file, Buffer wasn't created!\n");
+        return EXIT_FAILURE;
+    }
 
     // Writes the totmsgs in the beginning of the buffer
     // dest , src , size

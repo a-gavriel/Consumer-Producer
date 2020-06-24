@@ -1,15 +1,11 @@
-#define _GNU_SOURCE
-#include <stdio.h> 
-#include <stdlib.h> 
-#include <string.h> 
-#include <fcntl.h> 
-#include <sys/shm.h> 
-#include <sys/stat.h> 
-#include <sys/mman.h>
-#include <unistd.h>
-#include <sys/ipc.h> 
-#include <sys/types.h>
-#include <stdint.h>
+#define _GNU_SOURCE     // mremap
+#include <stdio.h>      // standard input output
+#include <stdlib.h>     // EXIT_FAILURE
+#include <string.h>     // memcpy 
+#include <sys/shm.h>    // shm
+#include <sys/mman.h>   // mmap
+#include <fcntl.h>      // shared memory permission
+#include <stdint.h>     // for int variants
 
 #define MSGSIZE 16
 #define GLOB_SIZE 64
