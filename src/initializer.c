@@ -81,27 +81,26 @@ int InitializeBuffers(int messageCount)
     //Global Variables Buffer   
     // O_EXCL If the shared memory object already exist 
     //shm_unlink(buffer_name_global); 
+    printf("%s : %i - Creating the Global Var Buffer \n", app_name, pid);
     int shm_fd = shm_open(buffer_name_global, O_RDWR|O_CREAT|O_EXCL, 0);
     if (shm_fd == -1)
     {
-        printf("%s : %i - Error creating the Global Var Buffer \n", app_name, pid);
         perror("Error creating the Shared Memory Object");
         return EXIT_FAILURE;
-    } 
+    }
+    printf("%s : %i - Created the Shared Memory Object \n", app_name, pid);
     if(ftruncate(shm_fd, sizeof(Global_Var)) == -1)
     {
-        printf("%s : %i - Error creating the Global Var Buffer \n", app_name, pid);
         perror("Error during truncate process");
         return EXIT_FAILURE;
     }
-
+    printf("%s : %i - Truncate the Shared Memory Object \n", app_name, pid);
     Global_Var *ptr_buff_glob_var = (Global_Var *)mmap(NULL, sizeof(Global_Var), PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if (ptr_buff_glob_var == MAP_FAILED){
-        printf("%s : %i - Error mapping the Global Var Buffer \n", app_name, pid);
         perror("Error during mapping process");
         return EXIT_FAILURE;
     } 
-
+    printf("%s : %i - Shared Memory Object Mapped \n", app_name, pid);
     ptr_buff_glob_var->buffer_message_size = messageCount;
     ptr_buff_glob_var->active_consumers = 0;
     ptr_buff_glob_var->active_productors = 0;
@@ -119,6 +118,7 @@ int InitializeBuffers(int messageCount)
     ptr_buff_glob_var->total_user_time = 0;
     ptr_buff_glob_var->buffer_count_message = 0;
     munmap(ptr_buff_glob_var, sizeof(Global_Var));
+    free(buffer_name_global);
     return EXIT_SUCCESS;
 }
 
