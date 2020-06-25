@@ -23,7 +23,6 @@ typedef struct Global_Var
     int historical_consumers;
     int historical_buffer_messages; //Historical count of messages inserted into the buffer
     int historical_productor;
-    int buffer_count_message; //Carry the count of the message in the buffer in the instant t
     int last_read_position;
     int last_write_position;
     int consumers_delete_by_key;

@@ -29,7 +29,6 @@ typedef struct Global_Var
     int historical_consumers;
     int historical_buffer_messages; //Historical count of messages inserted into the buffer
     int historical_productor;
-    int buffer_count_message; //Carry the count of the message in the buffer in the instant t
     int last_read_position;
     int last_write_position;
     int consumers_delete_by_key;
@@ -117,17 +116,9 @@ void print_help(void)
 
 
 /**
- * Exit Sequence (Finalizer Process start)
+ * Exit Sequence
  * **/
-void ExitFromFinalizerProcess()
-{
-
-}
-
-/**
- * Exit Sequence (Read special message from buffer)
- * **/
-void ExitFromSpecialMessage()
+void ExitProcess()
 {
 
 }
@@ -222,24 +213,28 @@ void AutomatedConsumerProcess()
 
 void ManualConsumerProcess()
 {
-    short int exitMode = 0;
     int magicNumber = 0;
     while(flag)
     {
         if(ptr_buff_glob_var->finalize == 1)
         {
-            exitMode = 0;
+            //Finalize process by Finalizaer Global Var
+            printf("%s : %i - Start Finalize Process | Reason: Global Var Finalize Process \n", app_name, pid);
             break;
         }
         if(getchar() == 10)
         {  
             magicNumber = ReadMessage();
         }
+        if(magicNumber == pid % 6)
+        {
+            //Finalize process by Special Message (magic number)
+            printf("%s : %i - Start Finalize Process | Reason: Magic Number \n", app_name, pid);
+            break;
+        }
     }
-    if(exitMode == 0)
-    {
-        ExitFromFinalizerProcess();
-    }
+    flag = false;
+    ExitProcess();
 }
 
 int main(int argc, char *argv[]){ 
@@ -303,6 +298,7 @@ int main(int argc, char *argv[]){
     {
         return EXIT_FAILURE;
     }
+    //Review if the finalize global var is rised
     //Select mode
     if(isAutoMode)
     {
