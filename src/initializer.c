@@ -54,19 +54,28 @@ typedef struct Global_Message
 */
 int InitilizeSemaphores(int messageCount)
 {
-    if (sem_open("SEM_BUF_MES_ADD", O_CREAT, 0644, messageCount) == SEM_FAILED)
+    if (sem_open("SEM_BUFF_PRODUCER", O_CREAT, 0644, messageCount) == SEM_FAILED)
     {
         return EXIT_FAILURE;
     }
-    if (sem_open("SEM_BUF_MES_SUB", O_CREAT, 0644, 0) == SEM_FAILED)
+    if (sem_open("SEM_BUFF_CONSUMER", O_CREAT, 0644, 0) == SEM_FAILED)
     {
         return EXIT_FAILURE;
     }
-    if (sem_open("SEM_BUF_GLOB_READ_INDEX", O_CREAT, 0644, 0) == SEM_FAILED)
+    if (sem_open("SEM_BUF_GLOB_READ_INDEX", O_CREAT, 0644, 1) == SEM_FAILED)
     {
         return EXIT_FAILURE;
     }
-    if (sem_open("SEM_BUF_GLOB_WRITE_INDEX", O_CREAT, 0644, 0) == SEM_FAILED)
+    if (sem_open("SEM_BUF_GLOB_WRITE_INDEX", O_CREAT, 0644, 1) == SEM_FAILED)
+    {
+        return EXIT_FAILURE;
+    }
+    if (sem_open("SEM_BUF_GLOB_DISABLE_PROCESS", O_CREAT, 0644, 1) == SEM_FAILED)
+    {
+        return EXIT_FAILURE;
+    }
+    //Semaphore for wake up the finalizer process after all process get disabled
+    if (sem_open("SEM_BUF_GLOB_FINALIZER", O_CREAT, 0644, 0) == SEM_FAILED)
     {
         return EXIT_FAILURE;
     }
@@ -85,7 +94,7 @@ int InitializeBuffers(int messageCount)
 
     //Global Variables Buffer   
     // O_EXCL If the shared memory object already exist 
-    //shm_unlink(buffer_var_name); 
+    printf("************************************************************ \n");
     printf("%s : %i - Creating the Global Var Buffer \n", app_name, pid);
     int shm_fd = shm_open(buffer_var_name, O_RDWR|O_CREAT|O_EXCL, 0666);
     if (shm_fd == -1)
@@ -114,8 +123,8 @@ int InitializeBuffers(int messageCount)
     ptr_buff_glob_var->historical_buffer_messages =0;
     ptr_buff_glob_var->historical_consumers = 0;
     ptr_buff_glob_var->historical_productor = 0;
-    ptr_buff_glob_var->last_read_position = 0;
-    ptr_buff_glob_var->last_write_position = 0;
+    ptr_buff_glob_var->last_read_position = -1;
+    ptr_buff_glob_var->last_write_position = -1;
     ptr_buff_glob_var->total_block_time = 0;
     ptr_buff_glob_var->total_cpu_time = 0;
     ptr_buff_glob_var->total_kernel_time = 0;
@@ -126,6 +135,7 @@ int InitializeBuffers(int messageCount)
     free(buffer_var_name);
 
     //Global Message Buffer
+    printf("************************************************************ \n");
     printf("%s : %i - Creating the Global Message Buffer \n", app_name, pid);
     //shm_unlink(buffer_message_name); 
     shm_fd = shm_open(buffer_message_name, O_RDWR|O_CREAT|O_EXCL, 0666);
@@ -141,7 +151,7 @@ int InitializeBuffers(int messageCount)
         return EXIT_FAILURE;
     }
     printf("%s : %i - Truncate the Shared Memory Object \n", app_name, pid);
-
+    printf("************************************************************ \n");
     return EXIT_SUCCESS;
 }
 

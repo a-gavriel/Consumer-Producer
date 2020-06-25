@@ -61,14 +61,44 @@ Global_Message *ptr_buff_glob_mess = NULL;
 int pid = 0;
 
 //Begin Semaphore Region
-char *semBufferName = "sem_buffer";
-sem_t *semBuffer = NULL;
+sem_t *sem_finalize = NULL;
+sem_t *sem_consumer = NULL;
+sem_t *sem_producer = NULL;
+sem_t *sem_last_read = NULL;
 // End Semaphore Region
 
 
-void InitializeSemaphores()
+int InitilizeSemaphores()
 {
-   semBuffer = sem_open(semBufferName, 0); /* Open a preexisting semaphore. */
+    sem_producer = sem_open("SEM_BUFF_PRODUCER", 0);
+    if ( sem_producer == SEM_FAILED)
+    {
+        return EXIT_FAILURE;
+    }
+    sem_consumer = sem_open("SEM_BUFF_CONSUMER", 0);
+    if ( sem_consumer == SEM_FAILED)
+    {
+        return EXIT_FAILURE;
+    }
+    sem_last_read = sem_open("SEM_BUF_GLOB_READ_INDEX", 0);
+    if ( sem_last_read == SEM_FAILED)
+    {
+        return EXIT_FAILURE;
+    }
+    if (sem_open("SEM_BUF_GLOB_WRITE_INDEX", 0) == SEM_FAILED)
+    {
+        return EXIT_FAILURE;
+    }
+    if (sem_open("SEM_BUF_GLOB_DISABLE_PROCESS", 0) == SEM_FAILED)
+    {
+        return EXIT_FAILURE;
+    }
+    sem_finalize = sem_open("SEM_BUF_GLOB_FINALIZER", 0);
+    if ( sem_finalize == SEM_FAILED)
+    {
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
 }
 
 /**
@@ -85,14 +115,6 @@ void print_help(void)
 	printf("\n");
 }
 
-/**
- * Read Finalizar Global (Buffer) Variable
-*/
-bool ValidateFinalizerSignal()
-{
-    //If finalizar global variable is 1 return true
-    return true;
-}
 
 /**
  * Exit Sequence (Finalizer Process start)
@@ -113,9 +135,36 @@ void ExitFromSpecialMessage()
 /**
  * Read Message from buffer
 */
-char ReadMessage()
+int ReadMessage()
 {
-    return 'c';
+    printf("Call ReadMessage Function\n");
+    //Start if the buffer has message
+    sem_wait(sem_consumer);
+    //Block others consumers
+    sem_wait(sem_last_read);
+    printf("************************************************************ \n");
+    printf("New Message to Read: \n");
+    int last_read_position = ptr_buff_glob_var->last_read_position;
+    int max_messages = ptr_buff_glob_var->buffer_message_size;
+    //Validate if the last position was the end of the buffer, if true reset to start position
+    if (last_read_position == (max_messages - 1))
+    {
+        last_read_position = -1;
+    }
+    int positon_to_read = last_read_position + 1;
+
+    //Process the message readed
+    int magic_number = ptr_buff_glob_mess[positon_to_read].magic_number;
+
+    printf("\t %s \n",ptr_buff_glob_mess[positon_to_read].date_time);
+    printf("\t Magic Number: %i \n",magic_number);
+    //Set the new last read position index
+    ptr_buff_glob_var->last_read_position = positon_to_read;
+    //Release for other consumer process
+    sem_post(sem_last_read);
+    //Producers process can write one more message
+    sem_post(sem_producer);
+    return magic_number;
 }
 
 int SyncBuffer()
@@ -130,7 +179,8 @@ int SyncBuffer()
 
     //Global Variables Buffer   
     // O_EXCL If the shared memory object already exist 
-    printf("%s : %i - Sync Global Var Buffer \n", app_name, pid);
+    printf("************************************************************ \n");
+    printf("%s : %i - Opening Global Var Buffer \n", app_name, pid);
     int shm_fd = shm_open(buffer_var_name, O_RDWR, 0666);
     if (shm_fd == -1)
     {
@@ -147,7 +197,8 @@ int SyncBuffer()
     printf("%i \n", message_count);
 
     //Global Message Buffer
-    printf("%s : %i - Sync the Global Message Buffer \n", app_name, pid);
+    printf("************************************************************ \n");
+    printf("%s : %i - Opening the Global Message Buffer \n", app_name, pid);
     shm_fd = shm_open(buffer_message_name, O_RDONLY, 0666);
     if (shm_fd == -1)
     {
@@ -159,6 +210,7 @@ int SyncBuffer()
         perror("Error during mapping process");
         return EXIT_FAILURE;
     }
+    printf("************************************************************ \n");
     return EXIT_SUCCESS;
 }
 
@@ -171,22 +223,17 @@ void AutomatedConsumerProcess()
 void ManualConsumerProcess()
 {
     short int exitMode = 0;
-    char magicNumber = 'a';
+    int magicNumber = 0;
     while(flag)
     {
-        if(ValidateFinalizerSignal())
+        if(ptr_buff_glob_var->finalize == 1)
         {
             exitMode = 0;
             break;
         }
         if(getchar() == 10)
-        {
-            //Start Critical Region
-            sem_wait(semBuffer);           
+        {  
             magicNumber = ReadMessage();
-            printf("%c", magicNumber);
-            sem_post(semBuffer);
-            //End Critical Region (Release Sem)
         }
     }
     if(exitMode == 0)
@@ -246,10 +293,11 @@ int main(int argc, char *argv[]){
         isAutoMode = false;
     }
     
-    printf("%s \n", buffer_message_name);
-    printf("%lf \n", middleSeconds);
-    printf("%d \n", isAutoMode);
-
+    //Initialize Semaphores
+    if(InitilizeSemaphores() == 1)
+    {
+        return EXIT_FAILURE;
+    }
     //Open Buffer
     if(SyncBuffer()  == 1)
     {
