@@ -21,7 +21,8 @@ int main(){
     }
     **/
 
-    shm_unlink(buffer_name); 
+    shm_unlink("MEM_GLOBAL\0"); 
+    shm_unlink("MEM\0"); 
     printf("Closing the shm...\n");
     return 0; 
 } 

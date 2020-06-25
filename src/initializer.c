@@ -12,13 +12,11 @@
 #include <getopt.h>
 #include <sys/types.h>
 
-#define MSGSIZE 16
-#define GLOB_SIZE 64
-#define BUFFER_GLOB_SUFIX "GLOBAL"
+#define BUFFER_GLOB_SUFIX "_GLOBAL"
 
 //Begin Region Global Variables 
 char *app_name = NULL;
-char *buffer_name = NULL;
+char *buffer_message_name = NULL;
 int pid = 0;
 //End Region Global Varibales
 
@@ -41,6 +39,15 @@ typedef struct Global_Var
     double total_user_time; //Total Time in user mode (producers and consumers)
     short int finalize;
 } Global_Var;
+
+typedef struct Global_Message
+{
+    pid_t pid;
+    time_t date_time;
+    short int magic_number;
+    char message[20];
+} Global_Message;
+
 
 /**
  * Initialize the semaphores needed by the system
@@ -68,21 +75,19 @@ int InitilizeSemaphores(int messageCount)
 
 int InitializeBuffers(int messageCount)
 { 
-    char *buffer_name_global = malloc(strlen(buffer_name) + strlen(BUFFER_GLOB_SUFIX) + 2);
-    if(buffer_name_global == NULL)
+    char *buffer_var_name = malloc(strlen(buffer_message_name) + strlen(BUFFER_GLOB_SUFIX) + 1);
+    if(buffer_var_name == NULL)
     {
         return EXIT_FAILURE;
     }
-    strcpy(buffer_name_global, buffer_name);
-    strcat(buffer_name_global, "_");
-    strcat(buffer_name_global, BUFFER_GLOB_SUFIX);
-    printf("%s \n",buffer_name_global);
+    strcpy(buffer_var_name, buffer_message_name);
+    strcat(buffer_var_name, BUFFER_GLOB_SUFIX);
 
     //Global Variables Buffer   
     // O_EXCL If the shared memory object already exist 
-    //shm_unlink(buffer_name_global); 
+    //shm_unlink(buffer_var_name); 
     printf("%s : %i - Creating the Global Var Buffer \n", app_name, pid);
-    int shm_fd = shm_open(buffer_name_global, O_RDWR|O_CREAT|O_EXCL, 0);
+    int shm_fd = shm_open(buffer_var_name, O_RDWR|O_CREAT|O_EXCL, 0666);
     if (shm_fd == -1)
     {
         perror("Error creating the Shared Memory Object");
@@ -118,7 +123,25 @@ int InitializeBuffers(int messageCount)
     ptr_buff_glob_var->total_user_time = 0;
     ptr_buff_glob_var->buffer_count_message = 0;
     munmap(ptr_buff_glob_var, sizeof(Global_Var));
-    free(buffer_name_global);
+    free(buffer_var_name);
+
+    //Global Message Buffer
+    printf("%s : %i - Creating the Global Message Buffer \n", app_name, pid);
+    //shm_unlink(buffer_message_name); 
+    shm_fd = shm_open(buffer_message_name, O_RDWR|O_CREAT|O_EXCL, 0666);
+    if (shm_fd == -1)
+    {
+        perror("Error creating the Shared Memory Object");
+        return EXIT_FAILURE;
+    }
+    printf("%s : %i - Created the Shared Memory Object \n", app_name, pid);
+    if(ftruncate(shm_fd, messageCount * sizeof(Global_Message)) == -1)
+    {
+        perror("Error during truncate process");
+        return EXIT_FAILURE;
+    }
+    printf("%s : %i - Truncate the Shared Memory Object \n", app_name, pid);
+
     return EXIT_SUCCESS;
 }
 
@@ -153,7 +176,7 @@ int main(int argc, char *argv[]) {
 		switch (value) {
 			case 'b':
                 //Read buffer message name
-				buffer_name = strdup(optarg);
+				buffer_message_name = strdup(optarg);
 				break;
 			case 's':
                 //Read the number of message that user wants
@@ -166,7 +189,7 @@ int main(int argc, char *argv[]) {
 				break;
 		}
 	}
-    if (buffer_name == NULL || strcmp("", buffer_name) == 0 || message_count <= 0 )
+    if (buffer_message_name == NULL || strcmp("", buffer_message_name) == 0 || message_count <= 0 )
     {
         printf("%s : %i - Please use -h to see right parameters format \n", app_name, pid);
         return EXIT_FAILURE;
