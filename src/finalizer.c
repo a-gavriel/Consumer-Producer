@@ -50,6 +50,8 @@ int pid = 0;
 Global_Var *ptr_buff_glob_var = NULL;
 Global_Message *ptr_buff_glob_mess = NULL;
 sem_t *sem_finalize = NULL;
+sem_t *sem_consumer = NULL;
+sem_t *sem_producer = NULL;
 //End Region Global Varibales
 
 /**
@@ -57,6 +59,16 @@ sem_t *sem_finalize = NULL;
 */
 int InitilizeSemaphores()
 {
+    sem_producer = sem_open("SEM_BUFF_PRODUCER", 0);
+    if ( sem_producer == SEM_FAILED)
+    {
+        return EXIT_FAILURE;
+    }
+    sem_consumer = sem_open("SEM_BUFF_CONSUMER", 0);
+    if ( sem_consumer == SEM_FAILED)
+    {
+        return EXIT_FAILURE;
+    }
     //Semaphore for wake up the finalizer process after all process get disabled
     sem_finalize = sem_open("SEM_BUF_GLOB_FINALIZER", 0);
     if ( sem_finalize == SEM_FAILED)
@@ -94,6 +106,21 @@ int InitializeBuffers()
         return EXIT_FAILURE;
     } 
     printf("%s : %i - Shared Memory Object Mapped \n", app_name, pid);
+    printf("************************************************************ \n");
+    return EXIT_SUCCESS;
+}
+
+int DestroySemaphores()
+{
+    printf("************************************************************ \n");
+    printf("%s : %i - Closing all Semaphores \n", app_name, pid);
+    if(sem_unlink("SEM_BUFF_PRODUCER") == -1 || sem_unlink("SEM_BUFF_CONSUMER") == -1 ||
+        sem_unlink("SEM_BUF_GLOB_READ_INDEX") == -1 || sem_unlink("SEM_BUF_GLOB_WRITE_INDEX") == -1 || 
+        sem_unlink("SEM_BUF_GLOB_DISABLE_PROCESS") == -1 || sem_unlink("SEM_BUF_GLOB_FINALIZER") == -1)
+    {
+        perror("Error");
+        return EXIT_FAILURE;
+    }
     printf("************************************************************ \n");
     return EXIT_SUCCESS;
 }
@@ -153,12 +180,25 @@ int main(int argc, char *argv[]) {
 
     //Set Finalize Flag
     ptr_buff_glob_var->finalize = 1;
-
+    //Wake up consumer/producers wainting if the buffer is empty of full;
+    sem_post(sem_consumer);
+    printf("%s : %i - Trying to Wake Up Consumers \n", app_name, pid);
+    sem_post(sem_producer);
+    printf("%s : %i - Trying to Wake Up Producers \n", app_name, pid);
+    printf("%s : %i - Wait untill all process (consumers/producres) end ... \n", app_name, pid);
     //Wait all consumer and producers ends
-    //sem_wait(sem_finalize);
+    sem_wait(sem_finalize);
+    //getchar();
     printf("Closing the shm...\n");
+    if (DestroySemaphores() == EXIT_FAILURE)
+    {
+        return EXIT_FAILURE;
+    }
     shm_unlink(buffer_message_name); 
     shm_unlink(buffer_var_name); 
+    sem_close(sem_consumer);
+    sem_close(sem_producer);
+    sem_close(sem_finalize);
     printf("Shm Closed \n");
     munmap(ptr_buff_glob_var, sizeof(Global_Var));
     free(buffer_var_name);

@@ -58,14 +58,29 @@ bool isAutoMode = false;
 Global_Var *ptr_buff_glob_var = NULL;
 Global_Message *ptr_buff_glob_mess = NULL;
 int pid = 0;
+int message_count = 0;
 
 //Begin Semaphore Region
-sem_t *sem_finalize = NULL;
 sem_t *sem_consumer = NULL;
+sem_t *sem_finalize = NULL;
 sem_t *sem_producer = NULL;
 sem_t *sem_last_read = NULL;
+sem_t *sem_disable_process = NULL;
 // End Semaphore Region
 
+/**
+ * \brief Print help for this application
+ */
+void print_help(void)
+{
+	printf("\n Usage: %s [OPTIONS]\n\n", app_name);
+	printf("  Options:\n");
+	printf("   -h --help                 Print this help\n");
+	printf("   -b --buffer_name          Buffer name for attach the process, Need to be diferent to empty\n");
+    printf("   -s --seconds              Time in seconds for random algorithm waiting time generator, Need to be greater than zero \n");
+    printf("   -m --mode                 Execution Mode: M = manual | A = automatic \n");
+	printf("\n");
+}
 
 int InitilizeSemaphores()
 {
@@ -84,11 +99,8 @@ int InitilizeSemaphores()
     {
         return EXIT_FAILURE;
     }
-    if (sem_open("SEM_BUF_GLOB_WRITE_INDEX", 0) == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
-    if (sem_open("SEM_BUF_GLOB_DISABLE_PROCESS", 0) == SEM_FAILED)
+    sem_disable_process = sem_open("SEM_BUF_GLOB_DISABLE_PROCESS", 0);
+    if ( sem_disable_process == SEM_FAILED)
     {
         return EXIT_FAILURE;
     }
@@ -98,64 +110,6 @@ int InitilizeSemaphores()
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
-}
-
-/**
- * \brief Print help for this application
- */
-void print_help(void)
-{
-	printf("\n Usage: %s [OPTIONS]\n\n", app_name);
-	printf("  Options:\n");
-	printf("   -h --help                 Print this help\n");
-	printf("   -b --buffer_name          Buffer name for attach the process, Need to be diferent to empty\n");
-    printf("   -s --seconds              Time in seconds for random algorithm waiting time generator, Need to be greater than zero \n");
-    printf("   -m --mode                 Execution Mode: M = manual | A = automatic \n");
-	printf("\n");
-}
-
-
-/**
- * Exit Sequence
- * **/
-void ExitProcess()
-{
-
-}
-
-/**
- * Read Message from buffer
-*/
-int ReadMessage()
-{
-    printf("Call ReadMessage Function\n");
-    //Start if the buffer has message
-    sem_wait(sem_consumer);
-    //Block others consumers
-    sem_wait(sem_last_read);
-    printf("************************************************************ \n");
-    printf("New Message to Read: \n");
-    int last_read_position = ptr_buff_glob_var->last_read_position;
-    int max_messages = ptr_buff_glob_var->buffer_message_size;
-    //Validate if the last position was the end of the buffer, if true reset to start position
-    if (last_read_position == (max_messages - 1))
-    {
-        last_read_position = -1;
-    }
-    int positon_to_read = last_read_position + 1;
-
-    //Process the message readed
-    int magic_number = ptr_buff_glob_mess[positon_to_read].magic_number;
-
-    printf("\t %s \n",ptr_buff_glob_mess[positon_to_read].date_time);
-    printf("\t Magic Number: %i \n",magic_number);
-    //Set the new last read position index
-    ptr_buff_glob_var->last_read_position = positon_to_read;
-    //Release for other consumer process
-    sem_post(sem_last_read);
-    //Producers process can write one more message
-    sem_post(sem_producer);
-    return magic_number;
 }
 
 int SyncBuffer()
@@ -177,15 +131,16 @@ int SyncBuffer()
     {
         perror("Error creating the Shared Memory Object");
         return EXIT_FAILURE;
-    } 
+    }
+    printf("%s : %i - Created the Shared Memory Object \n", app_name, pid);
     ptr_buff_glob_var = (Global_Var *)mmap(NULL, sizeof(Global_Var), PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if (ptr_buff_glob_var == MAP_FAILED){
         perror("Error during mapping process");
         return EXIT_FAILURE;
     }
+    printf("%s : %i - Shared Memory Object Mapped \n", app_name, pid);
     //Read the message buffer size (max of message)
-    int message_count = ptr_buff_glob_var->buffer_message_size;
-    printf("%i \n", message_count);
+    message_count = ptr_buff_glob_var->buffer_message_size;
 
     //Global Message Buffer
     printf("************************************************************ \n");
@@ -204,6 +159,49 @@ int SyncBuffer()
     printf("************************************************************ \n");
     return EXIT_SUCCESS;
 }
+
+/**
+ * Read Message from buffer
+*/
+int ReadMessage()
+{
+    printf("Call ReadMessage Function\n");
+    //Start if the buffer has message
+    sem_wait(sem_consumer);
+    printf("%s : %i - Message Detected \n", app_name, pid);
+    //Validar si hay mensaje de finalizacion
+    printf("%i \n", ptr_buff_glob_var->finalize);
+    if(ptr_buff_glob_var->finalize == 1)
+    {
+        return -1;
+    }
+    //Block others consumers
+    sem_wait(sem_last_read);
+    printf("************************************************************ \n");
+    int last_read_position = ptr_buff_glob_var->last_read_position;
+    int max_messages = ptr_buff_glob_var->buffer_message_size;
+    //Validate if the last position was the end of the buffer, if true reset to start position
+    if (last_read_position == (max_messages - 1))
+    {
+        last_read_position = -1;
+    }
+    int positon_to_read = last_read_position + 1;
+    printf("%s : %i - Read Buffer Positio: %i \n", app_name, pid, positon_to_read);
+    //Process the message readed
+    int magic_number = ptr_buff_glob_mess[positon_to_read].magic_number;
+
+    printf("\t %s \n",ptr_buff_glob_mess[positon_to_read].date_time);
+    printf("\t Magic Number: %i \n",magic_number);
+    //Set the new last read position index
+    ptr_buff_glob_var->last_read_position = positon_to_read;
+    //Release for other consumer process
+    sem_post(sem_last_read);
+    //Producers process can write one more message
+    sem_post(sem_producer);
+    return magic_number;
+}
+
+
 
 
 void AutomatedConsumerProcess()
@@ -232,16 +230,39 @@ void ManualConsumerProcess()
             printf("%s : %i - Start Finalize Process | Reason: Magic Number \n", app_name, pid);
             break;
         }
+        else if (magicNumber == -1) //Read Finalizer Global Var during read message process
+        {
+            printf("%s : %i - Start Finalize Process | Reason: Global Var Finalize Process \n", app_name, pid);
+            break;
+        }
     }
     flag = false;
-    ExitProcess();
 }
+
+
+/**
+ * Exit Sequence
+ * **/
+void ExitProcess()
+{
+    sem_wait(sem_disable_process);
+    printf("%s : %i - Closing Process \n", app_name, pid);
+    //If active_productors = 0 and activer_consumers = 1, I am the last one
+    if(ptr_buff_glob_var->active_productors == 0 && ptr_buff_glob_var->active_consumers == 1)
+    {
+        printf("%s : %i - Last process closed \n", app_name, pid);
+        sem_post(sem_finalize);
+    }
+    ptr_buff_glob_var->active_consumers--;
+    sem_post(sem_disable_process);
+    sem_post(sem_consumer);
+}
+
 
 int main(int argc, char *argv[]){ 
     clock_t begin = clock();
 
     //Read command Line args
-
     static struct option long_options[] = {
 		{"buffer_name", required_argument, 0, 'b'},
 		{"seconds", required_argument, 0, 's'},
@@ -298,8 +319,19 @@ int main(int argc, char *argv[]){
     {
         return EXIT_FAILURE;
     }
-    //Review if the finalize global var is rised
+    //Review if the finalize global var is raised
+    if(ptr_buff_glob_var->finalize == 1)
+    {
+        printf("************************************************************ \n");
+        printf("%s : %i - Finalizer Process is running... \n", app_name, pid);
+        printf("%s : %i - Please wait until finish and run Initializer Process First, after that run this process again. \n", app_name, pid);
+        printf("************************************************************ \n");
+        return EXIT_FAILURE;
+    }
     //Select mode
+    //Increment active consumers
+    ptr_buff_glob_var->active_consumers++;
+
     if(isAutoMode)
     {
         AutomatedConsumerProcess();
@@ -308,13 +340,21 @@ int main(int argc, char *argv[]){
     {
         ManualConsumerProcess();
     }
-      
+    
     clock_t end = clock();
     double time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
 
-    //Save statistics
+    //Exit rutine (save statistics, etc)
+    ExitProcess();
+
+
 
     //Release resources (mem, etc)
-
+    sem_close(sem_consumer);
+    sem_close(sem_producer);
+    sem_close(sem_disable_process);
+    sem_close(sem_finalize);
+    munmap(ptr_buff_glob_var, sizeof(Global_Var));
+    munmap(ptr_buff_glob_mess, (message_count*sizeof(Global_Var)));
     return 0; 
 } 

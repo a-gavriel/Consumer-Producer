@@ -53,31 +53,20 @@ typedef struct Global_Message
 */
 int InitilizeSemaphores(int messageCount)
 {
-    if (sem_open("SEM_BUFF_PRODUCER", O_CREAT, 0644, messageCount) == SEM_FAILED)
+    printf("************************************************************ \n");
+    printf("%s : %i - Start Semaphores Initializing \n", app_name, pid);
+    if (sem_open("SEM_BUFF_PRODUCER", O_CREAT | O_EXCL, 0644, messageCount) == SEM_FAILED ||
+        sem_open("SEM_BUFF_CONSUMER", O_CREAT | O_EXCL, 0644, 0) == SEM_FAILED ||
+        sem_open("SEM_BUF_GLOB_READ_INDEX", O_CREAT | O_EXCL, 0644, 1) == SEM_FAILED ||
+        sem_open("SEM_BUF_GLOB_WRITE_INDEX", O_CREAT | O_EXCL, 0644, 1) == SEM_FAILED ||
+        sem_open("SEM_BUF_GLOB_DISABLE_PROCESS", O_CREAT, 0644, 1) == SEM_FAILED ||
+        sem_open("SEM_BUF_GLOB_FINALIZER", O_CREAT, 0644, 0) == SEM_FAILED)
     {
+        perror("Error");
         return EXIT_FAILURE;
     }
-    if (sem_open("SEM_BUFF_CONSUMER", O_CREAT, 0644, 0) == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
-    if (sem_open("SEM_BUF_GLOB_READ_INDEX", O_CREAT, 0644, 1) == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
-    if (sem_open("SEM_BUF_GLOB_WRITE_INDEX", O_CREAT, 0644, 1) == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
-    if (sem_open("SEM_BUF_GLOB_DISABLE_PROCESS", O_CREAT, 0644, 1) == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
-    //Semaphore for wake up the finalizer process after all process get disabled
-    if (sem_open("SEM_BUF_GLOB_FINALIZER", O_CREAT, 0644, 0) == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
+    printf("%s : %i - End Semaphores Initializing \n", app_name, pid);
+    printf("************************************************************ \n");
     return EXIT_SUCCESS;
 }
 
@@ -202,6 +191,8 @@ int main(int argc, char *argv[]) {
         printf("%s : %i - Please use -h to see right parameters format \n", app_name, pid);
         return EXIT_FAILURE;
     }
+    //InitilizeSemaphores(message_count);
+    
     if(InitilizeSemaphores(message_count) == EXIT_FAILURE)
     {
         return EXIT_FAILURE;
