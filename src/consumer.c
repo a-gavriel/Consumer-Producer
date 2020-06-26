@@ -28,6 +28,7 @@ Global_Var *ptr_buff_glob_var = NULL;
 Global_Message *ptr_buff_glob_mess = NULL;
 int pid = 0;
 int message_count = 0;
+int exit_by_key = 0;
 
 //Begin Semaphore Region
 sem_t *sem_consumer = NULL;
@@ -126,7 +127,7 @@ short int ReadMessage()
 {
     printf("Call ReadMessage Function\n");
     //Start if the buffer has message
-    sem_wait(sem_consumer);
+    //sem_wait(sem_consumer);
     printf("%s : %i - Message Detected \n", app_name, pid);
     //Validar si hay mensaje de finalizacion
     printf("%i \n", ptr_buff_glob_var->finalize);
@@ -135,7 +136,7 @@ short int ReadMessage()
         return -1;
     }
     //Block others consumers
-    sem_wait(sem_last_read);
+    //sem_wait(sem_last_read);
     printf("************************************************************ \n");
     int last_read_position = ptr_buff_glob_var->last_read_position;
     int max_messages = ptr_buff_glob_var->buffer_message_size;
@@ -145,12 +146,16 @@ short int ReadMessage()
         last_read_position = -1;
     }
     int positon_to_read = last_read_position + 1;
-    printf("%s : %i - Read Buffer Positio: %i \n", app_name, pid, positon_to_read);
+    printf("%s : %i - Read Buffer Position: %i \n", app_name, pid, positon_to_read);
     //Process the message readed
     short int magic_number = ptr_buff_glob_mess[positon_to_read].magic_number;
     pid_t message_pit = ptr_buff_glob_mess[positon_to_read].pid;
     time_t message_time = ptr_buff_glob_mess[positon_to_read].date_time;
     //
+    printf("\t DateTime: %ld\n", time(NULL));
+    printf("\t Process PID: %i", message_pit);
+    printf("\t Magic Number: %i", magic_number);
+    printf("************************************************************ \n");
     //Set the new last read position index
     ptr_buff_glob_var->last_read_position = positon_to_read;
     //Release for other consumer process
@@ -207,6 +212,7 @@ void ManualConsumerProcess()
         {
             //Finalize process by Special Message (magic number)
             printf("%s : %i - Start Finalize Process | Reason: Magic Number \n", app_name, pid);
+            exit_by_key = 1;
             break;
         }
         else if (magicNumber == -1) //Read Finalizer Global Var during read message process
@@ -225,6 +231,11 @@ void ManualConsumerProcess()
 void ExitProcess()
 {
     sem_wait(sem_disable_process);
+    if (exit_by_key == 1)
+    {
+        ptr_buff_glob_var->consumers_delete_by_key++;
+        printf("%s : %i - Increase COnsumers Deleted By Key Count \n", app_name, pid);
+    }
     printf("%s : %i - Closing Process \n", app_name, pid);
     //If active_productors = 0 and activer_consumers = 1, I am the last one
     if(ptr_buff_glob_var->active_productors == 0 && ptr_buff_glob_var->active_consumers == 1)

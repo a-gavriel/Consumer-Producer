@@ -139,6 +139,7 @@ int main(int argc, char *argv[]) {
     app_name = argv[0];
     app_name = app_name+2; //Delete ./ From the app Name
     pid = getpid();
+    printf("%s : %i - Starting Initializer Process... \n", app_name, pid);
     int value, option_index = 0;	
     int message_count = 0;
     /* Try to process all command line arguments */
