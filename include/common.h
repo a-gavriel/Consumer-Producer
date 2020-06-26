@@ -2,6 +2,8 @@
 
 #define BUFFER_GLOB_SUFIX "_GLOBAL"
 
+#define MESSAGE_SIZE 20
+
 typedef struct Global_Var
 {
     int buffer_message_size; //Use for the remap on the consumer and producer process
@@ -26,5 +28,5 @@ typedef struct Global_Message
     pid_t pid;
     time_t date_time;
     short int magic_number;
-    char message[20];
+    char message[MESSAGE_SIZE];
 } Global_Message;
