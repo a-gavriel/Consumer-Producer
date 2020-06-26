@@ -43,7 +43,7 @@ int main(int argc, char *argv[]){
   // Stuff
   int c;
   for (int i =0;i<10000; ++i){
-    for (int j = 0; j<10000; ++j){
+    for (int j = 0; j<1000; ++j){
 
       c = i*j+j+i;
       printf("T");
