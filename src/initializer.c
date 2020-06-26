@@ -35,7 +35,7 @@ int InitilizeSemaphores(int messageCount)
         sem_open("SEM_BUF_GLOB_FINALIZER", O_CREAT | O_EXCL, 0644, 0) == SEM_FAILED)
     {
         perror("Error");
-        printf("%s : %i - Please Run Finalizer with -r flag \n", app_name, pid);
+        printf("%s : %i - Please Run Finalizer with -ff flag \n", app_name, pid);
         return EXIT_FAILURE;
     }
     printf("%s : %i - End Semaphores Initializing \n", app_name, pid);
@@ -143,7 +143,7 @@ int main(int argc, char *argv[]) {
     int value, option_index = 0;	
     int message_count = 0;
     /* Try to process all command line arguments */
-	while ((value = getopt_long(argc, argv, "b:s:h", long_options, &option_index)) != -1) {
+	while ((value = getopt_long(argc, argv, "b:s:ff:h", long_options, &option_index)) != -1) {
 		switch (value) {
 			case 'b':
                 //Read buffer message name

@@ -15,6 +15,7 @@
 #include <semaphore.h>
 #include <fcntl.h>          /* O_CREAT, O_EXEC          */
 #include <time.h>
+#include <sys/times.h>
 
 #include "../include/randomGenerators.h"
 #include "../include/common.h"
@@ -29,6 +30,7 @@ Global_Message *ptr_buff_glob_mess = NULL;
 int pid = 0;
 int message_count = 0;
 int exit_by_key = 0;
+static struct tms cpu_time;
 
 //Begin Semaphore Region
 sem_t *sem_consumer = NULL;
@@ -50,6 +52,14 @@ void print_help(void)
     printf("   -s --seconds              Time in seconds for random algorithm waiting time generator, Need to be greater than zero \n");
     printf("   -m --mode                 Execution Mode: M = manual | A = automatic \n");
 	printf("\n");
+}
+
+void PrintDateTime(time_t time)
+{
+    time_t t = time;
+    struct tm tm = *localtime(&t);
+    printf("now: %d-%02d-%02d %02d:%02d:%02d\n",
+         tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 }
 
 int InitilizeSemaphores()
@@ -125,9 +135,8 @@ int SyncBuffer()
 */
 short int ReadMessage()
 {
-    printf("Call ReadMessage Function\n");
     //Start if the buffer has message
-    //sem_wait(sem_consumer);
+    sem_wait(sem_consumer);
     printf("%s : %i - Message Detected \n", app_name, pid);
     //Validar si hay mensaje de finalizacion
     printf("%i \n", ptr_buff_glob_var->finalize);
@@ -136,7 +145,7 @@ short int ReadMessage()
         return -1;
     }
     //Block others consumers
-    //sem_wait(sem_last_read);
+    sem_wait(sem_last_read);
     printf("************************************************************ \n");
     int last_read_position = ptr_buff_glob_var->last_read_position;
     int max_messages = ptr_buff_glob_var->buffer_message_size;
@@ -152,9 +161,10 @@ short int ReadMessage()
     pid_t message_pit = ptr_buff_glob_mess[positon_to_read].pid;
     time_t message_time = ptr_buff_glob_mess[positon_to_read].date_time;
     //
-    printf("\t DateTime: %ld\n", time(NULL));
-    printf("\t Process PID: %i", message_pit);
-    printf("\t Magic Number: %i", magic_number);
+    printf("\t DateTime:");
+    PrintDateTime(time(NULL));
+    printf("\t Process PID: %i \n", message_pit);
+    printf("\t Magic Number: %i \n", magic_number);
     printf("************************************************************ \n");
     //Set the new last read position index
     ptr_buff_glob_var->last_read_position = positon_to_read;
@@ -236,7 +246,9 @@ void ExitProcess()
         ptr_buff_glob_var->consumers_delete_by_key++;
         printf("%s : %i - Increase COnsumers Deleted By Key Count \n", app_name, pid);
     }
-    printf("%s : %i - Closing Process \n", app_name, pid);
+    times(&cpu_time);
+    printf("Program Mode User Time: %f \n", cpu_time.tms_utime * 1000000); //User Time
+    printf("Program Mode Kernel Time: %f \n ", cpu_time.tms_stime * 100000); //System Time (Kernel)
     //If active_productors = 0 and activer_consumers = 1, I am the last one
     if(ptr_buff_glob_var->active_productors == 0 && ptr_buff_glob_var->active_consumers == 1)
     {
