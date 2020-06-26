@@ -30,7 +30,8 @@ Global_Message *ptr_buff_glob_mess = NULL;
 int pid = 0;
 int message_count = 0;
 int exit_by_key = 0;
-static struct tms cpu_time;
+static struct tms start_cpu_time;
+static struct tms end_cpu_time;
 
 //Begin Semaphore Region
 sem_t *sem_consumer = NULL;
@@ -206,8 +207,7 @@ void ManualConsumerProcess()
 {
     short int magicNumber = 0;
     while(flag)
-    {
-        
+    {  
         if(ptr_buff_glob_var->finalize == 1)
         {
             //Finalize process by Finalizaer Global Var
@@ -246,9 +246,14 @@ void ExitProcess()
         ptr_buff_glob_var->consumers_delete_by_key++;
         printf("%s : %i - Increase COnsumers Deleted By Key Count \n", app_name, pid);
     }
-    times(&cpu_time);
-    printf("Program Mode User Time: %f \n", cpu_time.tms_utime * 1000000); //User Time
-    printf("Program Mode Kernel Time: %f \n ", cpu_time.tms_stime * 100000); //System Time (Kernel)
+
+    for(int i = 0; i<1000000000; i++)
+    {
+        int a = 5;
+    }
+    printf("%f \n", (double)end_cpu_time.tms_utime);
+    printf("Program Mode User Time: %f \n", ((double)end_cpu_time.tms_utime / CLOCKS_PER_SEC) ); //User Time
+    printf("Program Mode Kernel Time: %f \n ", (double)((end_cpu_time.tms_stime - start_cpu_time.tms_stime) / CLOCKS_PER_SEC) ); //System Time (Kernel)
     //If active_productors = 0 and activer_consumers = 1, I am the last one
     if(ptr_buff_glob_var->active_productors == 0 && ptr_buff_glob_var->active_consumers == 1)
     {
@@ -263,6 +268,7 @@ void ExitProcess()
 
 int main(int argc, char *argv[]){ 
     clock_t begin = clock();
+    times(&start_cpu_time);
 
     //Read command Line args
     static struct option long_options[] = {
@@ -336,6 +342,7 @@ int main(int argc, char *argv[]){
     //Select mode
     //Increment active consumers
     ptr_buff_glob_var->active_consumers++;
+    ptr_buff_glob_var->historical_consumers++;
 
     if(isAutoMode)
     {
@@ -346,10 +353,13 @@ int main(int argc, char *argv[]){
         ManualConsumerProcess();
     }
     
+    if(times(&end_cpu_time) < 0)
+    {
+        perror("Error");
+    }
     clock_t end = clock();
     double time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
 
-    //Exit rutine (save statistics, etc)
     ExitProcess();
 
 

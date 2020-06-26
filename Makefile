@@ -3,7 +3,7 @@ all: clean createBin build
 
 CFLAGS = -Wall
 CC := gcc
-LDLIBS = -lrt -lpthread 
+LDLIBS = -lrt -lpthread
 
 SRC_DIR := src
 OBJ_DIR := obj
