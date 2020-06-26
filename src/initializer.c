@@ -12,13 +12,11 @@
 #include <getopt.h>
 #include <sys/types.h>
 
-#define MSGSIZE 16
-#define GLOB_SIZE 64
-#define BUFFER_GLOB_SUFIX "GLOBAL"
+#define BUFFER_GLOB_SUFIX "_GLOBAL"
 
 //Begin Region Global Variables 
 char *app_name = NULL;
-char *buffer_name = NULL;
+char *buffer_message_name = NULL;
 int pid = 0;
 //End Region Global Varibales
 
@@ -30,7 +28,6 @@ typedef struct Global_Var
     int historical_consumers;
     int historical_buffer_messages; //Historical count of messages inserted into the buffer
     int historical_productor;
-    int buffer_count_message; //Carry the count of the message in the buffer in the instant t
     int last_read_position;
     int last_write_position;
     int consumers_delete_by_key;
@@ -42,47 +39,52 @@ typedef struct Global_Var
     short int finalize;
 } Global_Var;
 
+typedef struct Global_Message
+{
+    pid_t pid;
+    time_t date_time;
+    short int magic_number;
+    char message[20];
+} Global_Message;
+
+
 /**
  * Initialize the semaphores needed by the system
 */
 int InitilizeSemaphores(int messageCount)
 {
-    if (sem_open("SEM_BUF_MES_ADD", O_CREAT, 0644, messageCount) == SEM_FAILED)
+    printf("************************************************************ \n");
+    printf("%s : %i - Start Semaphores Initializing \n", app_name, pid);
+    if (sem_open("SEM_BUFF_PRODUCER", O_CREAT | O_EXCL, 0644, messageCount) == SEM_FAILED ||
+        sem_open("SEM_BUFF_CONSUMER", O_CREAT | O_EXCL, 0644, 0) == SEM_FAILED ||
+        sem_open("SEM_BUF_GLOB_READ_INDEX", O_CREAT | O_EXCL, 0644, 1) == SEM_FAILED ||
+        sem_open("SEM_BUF_GLOB_WRITE_INDEX", O_CREAT | O_EXCL, 0644, 1) == SEM_FAILED ||
+        sem_open("SEM_BUF_GLOB_DISABLE_PROCESS", O_CREAT, 0644, 1) == SEM_FAILED ||
+        sem_open("SEM_BUF_GLOB_FINALIZER", O_CREAT, 0644, 0) == SEM_FAILED)
     {
+        perror("Error");
         return EXIT_FAILURE;
     }
-    if (sem_open("SEM_BUF_MES_SUB", O_CREAT, 0644, 0) == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
-    if (sem_open("SEM_BUF_GLOB_READ_INDEX", O_CREAT, 0644, 0) == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
-    if (sem_open("SEM_BUF_GLOB_WRITE_INDEX", O_CREAT, 0644, 0) == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
+    printf("%s : %i - End Semaphores Initializing \n", app_name, pid);
+    printf("************************************************************ \n");
     return EXIT_SUCCESS;
 }
 
 int InitializeBuffers(int messageCount)
 { 
-    char *buffer_name_global = malloc(strlen(buffer_name) + strlen(BUFFER_GLOB_SUFIX) + 2);
-    if(buffer_name_global == NULL)
+    char *buffer_var_name = malloc(strlen(buffer_message_name) + strlen(BUFFER_GLOB_SUFIX) + 1);
+    if(buffer_var_name == NULL)
     {
         return EXIT_FAILURE;
     }
-    strcpy(buffer_name_global, buffer_name);
-    strcat(buffer_name_global, "_");
-    strcat(buffer_name_global, BUFFER_GLOB_SUFIX);
-    printf("%s \n",buffer_name_global);
+    strcpy(buffer_var_name, buffer_message_name);
+    strcat(buffer_var_name, BUFFER_GLOB_SUFIX);
 
     //Global Variables Buffer   
     // O_EXCL If the shared memory object already exist 
-    //shm_unlink(buffer_name_global); 
+    printf("************************************************************ \n");
     printf("%s : %i - Creating the Global Var Buffer \n", app_name, pid);
-    int shm_fd = shm_open(buffer_name_global, O_RDWR|O_CREAT|O_EXCL, 0);
+    int shm_fd = shm_open(buffer_var_name, O_RDWR|O_CREAT|O_EXCL, 0666);
     if (shm_fd == -1)
     {
         perror("Error creating the Shared Memory Object");
@@ -109,16 +111,34 @@ int InitializeBuffers(int messageCount)
     ptr_buff_glob_var->historical_buffer_messages =0;
     ptr_buff_glob_var->historical_consumers = 0;
     ptr_buff_glob_var->historical_productor = 0;
-    ptr_buff_glob_var->last_read_position = 0;
-    ptr_buff_glob_var->last_write_position = 0;
+    ptr_buff_glob_var->last_read_position = -1;
+    ptr_buff_glob_var->last_write_position = -1;
     ptr_buff_glob_var->total_block_time = 0;
     ptr_buff_glob_var->total_cpu_time = 0;
     ptr_buff_glob_var->total_kernel_time = 0;
     ptr_buff_glob_var->total_wait_time = 0;
     ptr_buff_glob_var->total_user_time = 0;
-    ptr_buff_glob_var->buffer_count_message = 0;
     munmap(ptr_buff_glob_var, sizeof(Global_Var));
-    free(buffer_name_global);
+    free(buffer_var_name);
+
+    //Global Message Buffer
+    printf("************************************************************ \n");
+    printf("%s : %i - Creating the Global Message Buffer \n", app_name, pid);
+    //shm_unlink(buffer_message_name); 
+    shm_fd = shm_open(buffer_message_name, O_RDWR|O_CREAT|O_EXCL, 0666);
+    if (shm_fd == -1)
+    {
+        perror("Error creating the Shared Memory Object");
+        return EXIT_FAILURE;
+    }
+    printf("%s : %i - Created the Shared Memory Object \n", app_name, pid);
+    if(ftruncate(shm_fd, messageCount * sizeof(Global_Message)) == -1)
+    {
+        perror("Error during truncate process");
+        return EXIT_FAILURE;
+    }
+    printf("%s : %i - Truncate the Shared Memory Object \n", app_name, pid);
+    printf("************************************************************ \n");
     return EXIT_SUCCESS;
 }
 
@@ -153,7 +173,7 @@ int main(int argc, char *argv[]) {
 		switch (value) {
 			case 'b':
                 //Read buffer message name
-				buffer_name = strdup(optarg);
+				buffer_message_name = strdup(optarg);
 				break;
 			case 's':
                 //Read the number of message that user wants
@@ -166,11 +186,13 @@ int main(int argc, char *argv[]) {
 				break;
 		}
 	}
-    if (buffer_name == NULL || strcmp("", buffer_name) == 0 || message_count <= 0 )
+    if (buffer_message_name == NULL || strcmp("", buffer_message_name) == 0 || message_count <= 0 )
     {
         printf("%s : %i - Please use -h to see right parameters format \n", app_name, pid);
         return EXIT_FAILURE;
     }
+    //InitilizeSemaphores(message_count);
+    
     if(InitilizeSemaphores(message_count) == EXIT_FAILURE)
     {
         return EXIT_FAILURE;
