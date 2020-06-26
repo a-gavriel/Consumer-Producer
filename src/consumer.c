@@ -17,42 +17,11 @@
 #include <time.h>
 
 #include "../include/randomGenerators.h"
-  
-#define BUFFER_GLOB_SUFIX "_GLOBAL"
-
-//Struct Region
-typedef struct Global_Var
-{
-    int buffer_message_size; //Use for the remap on the consumer and producer process
-    int active_consumers;
-    int active_productors;
-    int historical_consumers;
-    int historical_buffer_messages; //Historical count of messages inserted into the buffer
-    int historical_productor;
-    int last_read_position;
-    int last_write_position;
-    int consumers_delete_by_key;
-    double total_cpu_time;  //Sumatory of all process CPU time (Producer and Consumers)
-    double total_wait_time; //Total Time wait by the process (producers and consumers) (poison and exponential generators )
-    double total_block_time; //Total Time blocked by semaphores (producers and consumers)
-    double total_kernel_time; //Total Time in Kernel mode (producers and consumers)
-    double total_user_time; //Total Time in user mode (producers and consumers)
-    short int finalize;
-} Global_Var;
-
-typedef struct Global_Message
-{
-    pid_t pid;
-    time_t date_time;
-    short int magic_number;
-    char message[20];
-} Global_Message;
-
-//End Struct Region
+#include "../include/common.h"
 
 bool flag = true;
 char *app_name = NULL;
-double middleSeconds = -1;
+double mean_seconds = 0;
 char *buffer_message_name = NULL;
 bool isAutoMode = false;
 Global_Var *ptr_buff_glob_var = NULL;
@@ -84,31 +53,21 @@ void print_help(void)
 
 int InitilizeSemaphores()
 {
+    printf("************************************************************ \n");
+    printf("%s : %i - Start Semaphores Sync \n", app_name, pid);
     sem_producer = sem_open("SEM_BUFF_PRODUCER", 0);
-    if ( sem_producer == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
     sem_consumer = sem_open("SEM_BUFF_CONSUMER", 0);
-    if ( sem_consumer == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
     sem_last_read = sem_open("SEM_BUF_GLOB_READ_INDEX", 0);
-    if ( sem_last_read == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
     sem_disable_process = sem_open("SEM_BUF_GLOB_DISABLE_PROCESS", 0);
-    if ( sem_disable_process == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
     sem_finalize = sem_open("SEM_BUF_GLOB_FINALIZER", 0);
-    if ( sem_finalize == SEM_FAILED)
+    if ( sem_producer == SEM_FAILED || sem_consumer == SEM_FAILED || sem_last_read == SEM_FAILED || 
+        sem_disable_process == SEM_FAILED || sem_finalize == SEM_FAILED)
     {
+        perror("Error");
         return EXIT_FAILURE;
     }
+    printf("%s : %i - End Semaphores Sync \n", app_name, pid);
+    printf("************************************************************ \n");
     return EXIT_SUCCESS;
 }
 
@@ -163,7 +122,7 @@ int SyncBuffer()
 /**
  * Read Message from buffer
 */
-int ReadMessage()
+short int ReadMessage()
 {
     printf("Call ReadMessage Function\n");
     //Start if the buffer has message
@@ -188,10 +147,10 @@ int ReadMessage()
     int positon_to_read = last_read_position + 1;
     printf("%s : %i - Read Buffer Positio: %i \n", app_name, pid, positon_to_read);
     //Process the message readed
-    int magic_number = ptr_buff_glob_mess[positon_to_read].magic_number;
-
-    printf("\t %s \n",ptr_buff_glob_mess[positon_to_read].date_time);
-    printf("\t Magic Number: %i \n",magic_number);
+    short int magic_number = ptr_buff_glob_mess[positon_to_read].magic_number;
+    pid_t message_pit = ptr_buff_glob_mess[positon_to_read].pid;
+    time_t message_time = ptr_buff_glob_mess[positon_to_read].date_time;
+    //
     //Set the new last read position index
     ptr_buff_glob_var->last_read_position = positon_to_read;
     //Release for other consumer process
@@ -201,19 +160,39 @@ int ReadMessage()
     return magic_number;
 }
 
-
-
-
 void AutomatedConsumerProcess()
 {
-
+    short int magicNumber = 0;
+    while(flag)
+    {
+        if(ptr_buff_glob_var->finalize == 1)
+        {
+            //Finalize process by Finalizaer Global Var
+            printf("%s : %i - Start Finalize Process | Reason: Global Var Finalize Process \n", app_name, pid);
+            break;
+        }
+        magicNumber = ReadMessage();
+        if(magicNumber == pid % 6)
+        {
+            //Finalize process by Special Message (magic number)
+            printf("%s : %i - Start Finalize Process | Reason: Magic Number \n", app_name, pid);
+            break;
+        }
+        else if (magicNumber == -1) //Read Finalizer Global Var during read message process
+        {
+            printf("%s : %i - Start Finalize Process | Reason: Global Var Finalize Process \n", app_name, pid);
+            break;
+        }
+    }
+    flag = false;
 }
 
 void ManualConsumerProcess()
 {
-    int magicNumber = 0;
+    short int magicNumber = 0;
     while(flag)
     {
+        
         if(ptr_buff_glob_var->finalize == 1)
         {
             //Finalize process by Finalizaer Global Var
@@ -273,6 +252,7 @@ int main(int argc, char *argv[]){
     app_name = argv[0];
     app_name = app_name+2; //Delete ./ From the app Name
     pid = getpid();
+    printf("%s : %i - Starting Consumer Process... \n", app_name, pid);
     int value, option_index = 0;	
     char *mode = NULL;
     /* Try to process all command line arguments */
@@ -282,7 +262,7 @@ int main(int argc, char *argv[]){
 				buffer_message_name = strdup(optarg);
 				break;
 			case 's':
-                sscanf(optarg, "%lf", &middleSeconds);
+                sscanf(optarg, "%lf", &mean_seconds);
 				break;
 			case 'h':
 				print_help();
@@ -294,7 +274,7 @@ int main(int argc, char *argv[]){
 				break;
 		}
 	}
-    if (buffer_message_name == NULL || strcmp("", buffer_message_name) == 0 || middleSeconds <= 0 || strcmp("", mode) == 0 || ( strcmp("A", mode) != 0 && strcmp("M", mode) != 0) )
+    if (buffer_message_name == NULL || strcmp("", buffer_message_name) == 0 || mean_seconds <= 0 || strcmp("", mode) == 0 || ( strcmp("A", mode) != 0 && strcmp("M", mode) != 0) )
     {
         printf("%s : %i - Please use -h to see right parameters format \n", app_name, pid);
         return EXIT_FAILURE;
@@ -312,11 +292,13 @@ int main(int argc, char *argv[]){
     //Initialize Semaphores
     if(InitilizeSemaphores() == 1)
     {
+        printf("%s : %i - Please Run Initializer Process Fisrt \n", app_name, pid);
         return EXIT_FAILURE;
     }
     //Open Buffer
     if(SyncBuffer()  == 1)
     {
+        printf("%s : %i - Please Run Initializer Process Fisrt \n", app_name, pid);
         return EXIT_FAILURE;
     }
     //Review if the finalize global var is raised
@@ -356,5 +338,6 @@ int main(int argc, char *argv[]){
     sem_close(sem_finalize);
     munmap(ptr_buff_glob_var, sizeof(Global_Var));
     munmap(ptr_buff_glob_mess, (message_count*sizeof(Global_Var)));
+    printf("%s : %i - Consumer Process Ends \n", app_name, pid);
     return 0; 
 } 
