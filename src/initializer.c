@@ -124,8 +124,7 @@ void print_help(void)
 	printf("  Options:\n");
 	printf("   -h --help                 Print this help\n");
 	printf("   -b --buffer_name          Buffer name for attach the process, Need to be diferent to empty\n");
-    printf("   -s --seconds              Time in seconds for random algorithm waiting time generator, Need to be greater than zero \n");
-    printf("   -m --mode                 Execution Mode: M = manual | A = automatic \n");
+    printf("   -s --size                 Maximum amount of messages the buffer will hold \n");    
 	printf("\n");
 }
 
