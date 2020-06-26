@@ -11,4 +11,5 @@ unsigned int poissonRandom(double meanSeconds);
 
 unsigned int expRandom(double meanSeconds);
 
+short int magicRandom(void);
 #endif
