@@ -20,7 +20,9 @@
 
 bool flag = true;
 char *app_name = NULL;
-double middleSeconds = -1;
+double meanSeconds = -1;
+double blocked_timer = 0.0;
+double sleep_timer = 0.0;
 char *buffer_message_name = NULL;
 bool isAutoMode = false;
 Global_Var *ptr_buff_glob_var = NULL;
@@ -129,9 +131,9 @@ int SyncBuffer()
 /**
  * Exit Sequence
  * **/
-void ExitProcess()
+void ExitProcess(double elapsed_time,double process_time, double sys_time, double usr_time )
 {
-  sem_wait(sem_disable_process);
+  sem_wait_timed(sem_disable_process,&blocked_timer);
   printf("%s : %i - Closing Process \n", app_name, pid);
   //If active_productors = 1 and activer_consumers = 0, I am the last one
   if(ptr_buff_glob_var->active_productors == 1 && ptr_buff_glob_var->active_consumers == 0)
@@ -140,6 +142,13 @@ void ExitProcess()
       sem_post(sem_finalize);
   }
   ptr_buff_glob_var->active_productors--;
+
+  ptr_buff_glob_var->total_cpu_time += elapsed_time;
+  ptr_buff_glob_var->total_wait_time += sleep_timer;
+  ptr_buff_glob_var->total_block_time += blocked_timer;
+  ptr_buff_glob_var->total_kernel_time  += sys_time;
+  ptr_buff_glob_var->total_user_time += usr_time;
+
   sem_post(sem_disable_process);
   sem_post(sem_producer);
 }
@@ -151,10 +160,10 @@ short int WriteMessage(int max_messages)
 {
     printf("Call WriteMessage Function\n");
     //Start if the buffer has message
-    sem_wait(sem_producer);
+    sem_wait_timed(sem_producer,&blocked_timer);
     //Block others consumers
-    sem_wait(sem_last_wrote);
-    printf("************************************************************ \n");
+    sem_wait_timed(sem_last_wrote,&blocked_timer);
+    
     printf("New Message to Write: \n");
 
     // READING/WRITING GLOBAL BUFFER
@@ -178,7 +187,7 @@ short int WriteMessage(int max_messages)
 
     // WRITING TO MESSAGE BUFFER
 
-    printf("Position to write %d\n",positon_to_write);
+    printf("\t Position to write %d\n",positon_to_write);
     //Process the message readed
     short int magic_number = magicRandom();
     ptr_buff_glob_mess[positon_to_write].magic_number = magic_number;
@@ -186,10 +195,10 @@ short int WriteMessage(int max_messages)
     time_t now = time(NULL);
     ptr_buff_glob_mess[positon_to_write].date_time = now;
     struct tm tm = *localtime(&now);
-    printf("Time: %d-%02d-%02d %02d:%02d:%02d\n", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+    printf("\t Time: %d-%02d-%02d %02d:%02d:%02d\n", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
     printf("\t Magic Number: %i \n",magic_number);
-    printf("Active Consumers %d \n", active_consumers);
-    printf("Active Productors %d \n", active_productors);
+    printf("Active Consumers: %d \n", active_consumers);
+    printf("Active Productors: %d \n", active_productors);
     
     //Producers process can write one more message
     sem_post(sem_consumer);
@@ -203,23 +212,26 @@ int addProducerCounter(Global_Var *ptr_buff_glob_var){
   int historical_productor = ptr_buff_glob_var->historical_productor;
   ptr_buff_glob_var->historical_productor = historical_productor + 1;
 
-  return 0;
+  return historical_productor;
 }
 
 int processloop(Global_Var *ptr_buff_glob_var , Global_Message *ptr_buff_glob_mess, double wait_mean){
   srand(time(0));
-  addProducerCounter(ptr_buff_glob_var);
-  unsigned int wait_time = expRandom(wait_mean);
+  int productor_number = addProducerCounter(ptr_buff_glob_var);
+  unsigned int wait_time;
   int max_messages = ptr_buff_glob_var->buffer_message_size;
   //short int finalizeFlag = ptr_buff_glob_var->finalize;
   while(flag){
+    printf("************************************************************ \n");
+    printf("- Productor #%d\n", productor_number);
     if(ptr_buff_glob_var->finalize == 1){
       flag = false;
       //Finalize process by Finalizaer Global Var
       printf("%s : %i - Start Finalize Process | Reason: Global Var Finalize Process \n", app_name, pid);
       break;
-    }else{
+    }else{      
       wait_time = expRandom(wait_mean);
+      sleep_timer += ((double) wait_time)/1000000;
       printf("Waiting %u \n",wait_time );
       usleep(wait_time);
       WriteMessage(max_messages);
@@ -257,7 +269,7 @@ int main(int argc, char *argv[]){
         buffer_message_name = strdup(optarg);
         break;
       case 's':
-        sscanf(optarg, "%lf", &middleSeconds);
+        sscanf(optarg, "%lf", &meanSeconds);
         break;
       case 'h':
         print_help();
@@ -266,7 +278,7 @@ int main(int argc, char *argv[]){
         break;
     }
   }
-  if (buffer_message_name == NULL || strcmp("", buffer_message_name) == 0 || middleSeconds <= 0 )
+  if (buffer_message_name == NULL || strcmp("", buffer_message_name) == 0 || meanSeconds <= 0 )
   {
     printf("%s : %i - Please use -h to see right parameters format \n", app_name, pid);
     return EXIT_FAILURE;
@@ -283,12 +295,7 @@ int main(int argc, char *argv[]){
       return EXIT_FAILURE;
   }
 
-  processloop(ptr_buff_glob_var , ptr_buff_glob_mess, middleSeconds);
-
-
-  //Exit rutine (save statistics, etc)
-  ExitProcess();
-
+  processloop(ptr_buff_glob_var , ptr_buff_glob_mess, meanSeconds);
 
   // End timers
   times(&end_tms);
@@ -302,6 +309,8 @@ int main(int argc, char *argv[]){
   double usr_time = (double)(end_tms.tms_utime - start_tms.tms_utime)/100;
   double suspended_time = elapsed_time - process_time;
 
+  //Exit rutine (save statistics, etc)
+  ExitProcess(elapsed_time,process_time, sys_time, usr_time );
 
   //Release resources (mem, etc)
   sem_close(sem_consumer);
@@ -313,11 +322,13 @@ int main(int argc, char *argv[]){
   printf("************************************************************ \n");
   printf("%s : %i - Producer Process Ends \n", app_name, pid);
 
-  printf("Total time %f \n\n",  elapsed_time);
-  printf("- Suspended time %f \n\n",  suspended_time);  
-  printf("- Processing time %f \n\n",  process_time);
-  printf("  - System time %f \n\n",  sys_time);
-  printf("  - User time %f \n\n", usr_time);
+  printf("\nTotal time %f \n",  elapsed_time);
+  printf("- Suspended time %f \n",  suspended_time);
+  printf("  - Wait time %f \n", sleep_timer);  
+  printf("  - Blocked time %f \n", blocked_timer);    
+  printf("- Processing time %f \n",  process_time);
+  printf("  - System time %f \n",  sys_time);
+  printf("  - User time %f \n", usr_time);
 
   return 0; 
 } 
