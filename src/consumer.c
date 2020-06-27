@@ -15,50 +15,25 @@
 #include <semaphore.h>
 #include <fcntl.h>          /* O_CREAT, O_EXEC          */
 #include <time.h>
+#include <sys/times.h>
 
 #include "../include/randomGenerators.h"
-  
-#define BUFFER_GLOB_SUFIX "_GLOBAL"
-
-//Struct Region
-typedef struct Global_Var
-{
-    int buffer_message_size; //Use for the remap on the consumer and producer process
-    int active_consumers;
-    int active_productors;
-    int historical_consumers;
-    int historical_buffer_messages; //Historical count of messages inserted into the buffer
-    int historical_productor;
-    int last_read_position;
-    int last_write_position;
-    int consumers_delete_by_key;
-    double total_cpu_time;  //Sumatory of all process CPU time (Producer and Consumers)
-    double total_wait_time; //Total Time wait by the process (producers and consumers) (poison and exponential generators )
-    double total_block_time; //Total Time blocked by semaphores (producers and consumers)
-    double total_kernel_time; //Total Time in Kernel mode (producers and consumers)
-    double total_user_time; //Total Time in user mode (producers and consumers)
-    short int finalize;
-} Global_Var;
-
-typedef struct Global_Message
-{
-    pid_t pid;
-    time_t date_time;
-    short int magic_number;
-    char message[20];
-} Global_Message;
-
-//End Struct Region
+#include "../include/common.h"
 
 bool flag = true;
 char *app_name = NULL;
-double middleSeconds = -1;
+double mean_seconds = 0;
 char *buffer_message_name = NULL;
 bool isAutoMode = false;
 Global_Var *ptr_buff_glob_var = NULL;
 Global_Message *ptr_buff_glob_mess = NULL;
 int pid = 0;
 int message_count = 0;
+int exit_by_key = 0;
+double blocked_timer = 0.0;
+double sleep_timer = 0.0;
+int total_message_readed = 0;
+int max_message = 0;
 
 //Begin Semaphore Region
 sem_t *sem_consumer = NULL;
@@ -68,47 +43,46 @@ sem_t *sem_last_read = NULL;
 sem_t *sem_disable_process = NULL;
 // End Semaphore Region
 
+//
 /**
  * \brief Print help for this application
  */
 void print_help(void)
 {
-	printf("\n Usage: %s [OPTIONS]\n\n", app_name);
+	printf(KYEL"\n Usage: %s [OPTIONS]\n\n", app_name);
 	printf("  Options:\n");
 	printf("   -h --help                 Print this help\n");
 	printf("   -b --buffer_name          Buffer name for attach the process, Need to be diferent to empty\n");
     printf("   -s --seconds              Time in seconds for random algorithm waiting time generator, Need to be greater than zero \n");
     printf("   -m --mode                 Execution Mode: M = manual | A = automatic \n");
-	printf("\n");
+	printf(KNRM"\n");
+}
+
+void PrintDateTime(time_t time)
+{
+    time_t t = time;
+    struct tm tm = *localtime(&t);
+    printf("%d-%02d-%02d %02d:%02d:%02d\n",
+         tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 }
 
 int InitilizeSemaphores()
 {
+    printf(KNRM"************************************************************ \n");
+    printf("%s : %i - Start Semaphores Sync \n", app_name, pid);
     sem_producer = sem_open("SEM_BUFF_PRODUCER", 0);
-    if ( sem_producer == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
     sem_consumer = sem_open("SEM_BUFF_CONSUMER", 0);
-    if ( sem_consumer == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
     sem_last_read = sem_open("SEM_BUF_GLOB_READ_INDEX", 0);
-    if ( sem_last_read == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
     sem_disable_process = sem_open("SEM_BUF_GLOB_DISABLE_PROCESS", 0);
-    if ( sem_disable_process == SEM_FAILED)
-    {
-        return EXIT_FAILURE;
-    }
     sem_finalize = sem_open("SEM_BUF_GLOB_FINALIZER", 0);
-    if ( sem_finalize == SEM_FAILED)
+    if ( sem_producer == SEM_FAILED || sem_consumer == SEM_FAILED || sem_last_read == SEM_FAILED || 
+        sem_disable_process == SEM_FAILED || sem_finalize == SEM_FAILED)
     {
+        perror(KRED"Error");
         return EXIT_FAILURE;
     }
+    printf("%s : %i - End Semaphores Sync \n", app_name, pid);
+    printf("************************************************************ \n");
     return EXIT_SUCCESS;
 }
 
@@ -129,69 +103,78 @@ int SyncBuffer()
     int shm_fd = shm_open(buffer_var_name, O_RDWR, 0666);
     if (shm_fd == -1)
     {
-        perror("Error creating the Shared Memory Object");
+        perror(KRED"Error creating the Shared Memory Object");
         return EXIT_FAILURE;
     }
-    printf("%s : %i - Created the Shared Memory Object \n", app_name, pid);
+    printf(KGRN"%s : %i - Created the Shared Memory Object \n", app_name, pid);
     ptr_buff_glob_var = (Global_Var *)mmap(NULL, sizeof(Global_Var), PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if (ptr_buff_glob_var == MAP_FAILED){
-        perror("Error during mapping process");
+        perror(KRED"Error during mapping process");
         return EXIT_FAILURE;
     }
-    printf("%s : %i - Shared Memory Object Mapped \n", app_name, pid);
+    printf(KGRN"%s : %i - Shared Memory Object Mapped \n", app_name, pid);
     //Read the message buffer size (max of message)
     message_count = ptr_buff_glob_var->buffer_message_size;
 
     //Global Message Buffer
-    printf("************************************************************ \n");
-    printf("%s : %i - Opening the Global Message Buffer \n", app_name, pid);
+    printf(KNRM"************************************************************ \n");
+    printf(KNRM"%s : %i - Opening the Global Message Buffer \n", app_name, pid);
     shm_fd = shm_open(buffer_message_name, O_RDONLY, 0666);
     if (shm_fd == -1)
     {
-        perror("Error creating the Shared Memory Object");
+        perror(KRED"Error creating the Shared Memory Object");
         return EXIT_FAILURE;
     } 
+    printf(KGRN"%s : %i - Created the Shared Memory Object \n", app_name, pid);
     ptr_buff_glob_mess = (Global_Message *)mmap(NULL, (message_count * sizeof(Global_Message)), PROT_READ, MAP_SHARED, shm_fd, 0);
     if (ptr_buff_glob_mess == MAP_FAILED){
-        perror("Error during mapping process");
+        perror(KRED"Error during mapping process");
         return EXIT_FAILURE;
     }
-    printf("************************************************************ \n");
+    printf(KGRN"%s : %i - Shared Memory Object Mapped \n", app_name, pid);
+    printf(KNRM"************************************************************ \n");
     return EXIT_SUCCESS;
 }
 
 /**
  * Read Message from buffer
 */
-int ReadMessage()
+short int ReadMessage()
 {
-    printf("Call ReadMessage Function\n");
     //Start if the buffer has message
-    sem_wait(sem_consumer);
-    printf("%s : %i - Message Detected \n", app_name, pid);
+    sem_wait_timed(sem_consumer, &blocked_timer);
     //Validar si hay mensaje de finalizacion
-    printf("%i \n", ptr_buff_glob_var->finalize);
     if(ptr_buff_glob_var->finalize == 1)
     {
         return -1;
     }
+    printf(KBLU"%s : %i - Message Detected \n", app_name, pid);
     //Block others consumers
-    sem_wait(sem_last_read);
-    printf("************************************************************ \n");
+    sem_wait_timed(sem_last_read, &blocked_timer);
+    printf(KNRM"************************************************************ \n");
     int last_read_position = ptr_buff_glob_var->last_read_position;
-    int max_messages = ptr_buff_glob_var->buffer_message_size;
     //Validate if the last position was the end of the buffer, if true reset to start position
-    if (last_read_position == (max_messages - 1))
+    if (last_read_position == (max_message - 1))
     {
         last_read_position = -1;
     }
     int positon_to_read = last_read_position + 1;
-    printf("%s : %i - Read Buffer Positio: %i \n", app_name, pid, positon_to_read);
+    printf(KNRM"%s : %i - Read Buffer Position: %i \n", app_name, pid, positon_to_read);
     //Process the message readed
-    int magic_number = ptr_buff_glob_mess[positon_to_read].magic_number;
-
-    printf("\t %s \n",ptr_buff_glob_mess[positon_to_read].date_time);
-    printf("\t Magic Number: %i \n",magic_number);
+    short int magic_number = ptr_buff_glob_mess[positon_to_read].magic_number;
+    pid_t message_pit = ptr_buff_glob_mess[positon_to_read].pid;
+    time_t message_time = ptr_buff_glob_mess[positon_to_read].date_time;
+    int active_producers =  ptr_buff_glob_var->active_productors;
+    int active_consumers   = ptr_buff_glob_var->active_consumers;
+    //
+    total_message_readed++;
+    printf(KCYN"\t DateTime:");
+    PrintDateTime(message_time);
+    printf("\t Process PID: %i \n", message_pit);
+    printf("\t Magic Number: %i \n", magic_number);
+    printf("Active Consumers: %i \n", active_consumers);
+    printf("Active Producers: %i \n", active_producers);
+    printf(KNRM"************************************************************ \n");
     //Set the new last read position index
     ptr_buff_glob_var->last_read_position = positon_to_read;
     //Release for other consumer process
@@ -201,23 +184,49 @@ int ReadMessage()
     return magic_number;
 }
 
-
-
-
 void AutomatedConsumerProcess()
 {
-
+    short int magicNumber = 0;
+    while(flag)
+    {
+        unsigned int sleep = poissonRandom(mean_seconds);
+        printf(KCYN"%s : %i - Waiting %u s \n", app_name, pid, sleep);
+        sleep_timer += ((double) sleep)/1000000;; //process total sleep time
+        //Seelp the Process
+        usleep(sleep);
+        printf(KCYN"%s : %i - Process Wake Up\n", app_name, pid);
+        if(ptr_buff_glob_var->finalize == 1)
+        {
+            //Finalize process by Finalizaer Global Var
+            printf(KRED"%s : %i - Start Finalize Process | Reason: Global Var Finalize Process \n", app_name, pid);
+            break;
+        }
+        magicNumber = ReadMessage();
+        if(magicNumber == pid % 6)
+        {
+            //Finalize process by Special Message (magic number)
+            printf(KRED"%s : %i - Start Finalize Process | Reason: Magic Number \n", app_name, pid);
+            exit_by_key = 1;
+            break;
+        }
+        else if (magicNumber == -1) //Read Finalizer Global Var during read message process
+        {
+            printf(KRED"%s : %i - Start Finalize Process | Reason: Global Var Finalize Process \n", app_name, pid);
+            break;
+        }
+    }
+    flag = false;
 }
 
 void ManualConsumerProcess()
 {
-    int magicNumber = 0;
+    short int magicNumber = 0;
     while(flag)
-    {
+    {  
         if(ptr_buff_glob_var->finalize == 1)
         {
             //Finalize process by Finalizaer Global Var
-            printf("%s : %i - Start Finalize Process | Reason: Global Var Finalize Process \n", app_name, pid);
+            printf(KRED"%s : %i - Start Finalize Process | Reason: Global Var Finalize Process \n", app_name, pid);
             break;
         }
         if(getchar() == 10)
@@ -227,12 +236,13 @@ void ManualConsumerProcess()
         if(magicNumber == pid % 6)
         {
             //Finalize process by Special Message (magic number)
-            printf("%s : %i - Start Finalize Process | Reason: Magic Number \n", app_name, pid);
+            printf(KRED"%s : %i - Start Finalize Process | Reason: Magic Number \n", app_name, pid);
+            exit_by_key = 1;
             break;
         }
-        else if (magicNumber == -1) //Read Finalizer Global Var during read message process
+        else if(magicNumber == -1) //Read Finalizer Global Var during read message process
         {
-            printf("%s : %i - Start Finalize Process | Reason: Global Var Finalize Process \n", app_name, pid);
+            printf(KRED"%s : %i - Start Finalize Process | Reason: Global Var Finalize Process \n", app_name, pid);
             break;
         }
     }
@@ -243,14 +253,26 @@ void ManualConsumerProcess()
 /**
  * Exit Sequence
  * **/
-void ExitProcess()
+void ExitProcess(double elapsed_time,double process_time, double sys_time, double usr_time )
 {
-    sem_wait(sem_disable_process);
-    printf("%s : %i - Closing Process \n", app_name, pid);
+    sem_wait_timed(sem_disable_process, &blocked_timer);
+    if (exit_by_key == 1)
+    {
+        ptr_buff_glob_var->consumers_delete_by_key++;
+        printf(KGRN"%s : %i - Increase Consumers Deleted By Key Count \n", app_name, pid);
+    }
+
+    ptr_buff_glob_var->total_block_time += blocked_timer; // Total time process was blocked
+    ptr_buff_glob_var->total_wait_time += sleep_timer; //Total time process was sleeping
+
+    ptr_buff_glob_var->total_cpu_time += elapsed_time;
+    ptr_buff_glob_var->total_kernel_time  += sys_time;
+    ptr_buff_glob_var->total_user_time += usr_time;
+    printf(KGRN"%s : %i - All Global Statistics Sync \n", app_name, pid);
     //If active_productors = 0 and activer_consumers = 1, I am the last one
     if(ptr_buff_glob_var->active_productors == 0 && ptr_buff_glob_var->active_consumers == 1)
     {
-        printf("%s : %i - Last process closed \n", app_name, pid);
+        printf(KNRM"%s : %i - Last process closed \n", app_name, pid);
         sem_post(sem_finalize);
     }
     ptr_buff_glob_var->active_consumers--;
@@ -260,7 +282,17 @@ void ExitProcess()
 
 
 int main(int argc, char *argv[]){ 
-    clock_t begin = clock();
+    //Time Vars
+    srand(time(0));
+    clock_t beginProcess,endProcess;
+    struct tms start_tms, end_tms;
+    struct timeval  tv1, tv2;
+    
+    // Start timers
+    beginProcess = clock();  
+    times(&start_tms);
+    gettimeofday(&tv1, NULL);
+    // End Time Vars
 
     //Read command Line args
     static struct option long_options[] = {
@@ -273,8 +305,9 @@ int main(int argc, char *argv[]){
     app_name = argv[0];
     app_name = app_name+2; //Delete ./ From the app Name
     pid = getpid();
+    printf(KGRN"%s : %i - Starting Consumer Process... \n", app_name, pid);
     int value, option_index = 0;	
-    char *mode = NULL;
+    char *mode = "";
     /* Try to process all command line arguments */
 	while ((value = getopt_long(argc, argv, "b:s:m:h", long_options, &option_index)) != -1) {
 		switch (value) {
@@ -282,7 +315,7 @@ int main(int argc, char *argv[]){
 				buffer_message_name = strdup(optarg);
 				break;
 			case 's':
-                sscanf(optarg, "%lf", &middleSeconds);
+                sscanf(optarg, "%lf", &mean_seconds);
 				break;
 			case 'h':
 				print_help();
@@ -294,9 +327,9 @@ int main(int argc, char *argv[]){
 				break;
 		}
 	}
-    if (buffer_message_name == NULL || strcmp("", buffer_message_name) == 0 || middleSeconds <= 0 || strcmp("", mode) == 0 || ( strcmp("A", mode) != 0 && strcmp("M", mode) != 0) )
+    if (buffer_message_name == NULL || strcmp("", buffer_message_name) == 0 || mean_seconds <= 0 || strcmp("", mode) == 0 || ( strcmp("A", mode) != 0 && strcmp("M", mode) != 0) )
     {
-        printf("%s : %i - Please use -h to see right parameters format \n", app_name, pid);
+        printf(KRED"%s : %i - Please use -h to see right parameters format \n", app_name, pid);
         return EXIT_FAILURE;
     }
 
@@ -312,25 +345,29 @@ int main(int argc, char *argv[]){
     //Initialize Semaphores
     if(InitilizeSemaphores() == 1)
     {
+        printf(KRED"%s : %i - Please Run Initializer Process Fisrt \n", app_name, pid);
         return EXIT_FAILURE;
     }
     //Open Buffer
     if(SyncBuffer()  == 1)
     {
+        printf(KRED"%s : %i - Please Run Initializer Process Fisrt \n", app_name, pid);
         return EXIT_FAILURE;
     }
+    max_message = ptr_buff_glob_var->buffer_message_size;
     //Review if the finalize global var is raised
     if(ptr_buff_glob_var->finalize == 1)
     {
-        printf("************************************************************ \n");
-        printf("%s : %i - Finalizer Process is running... \n", app_name, pid);
+        printf(KNRM"************************************************************ \n");
+        printf(KRED"%s : %i - Finalizer Process is running... \n", app_name, pid);
         printf("%s : %i - Please wait until finish and run Initializer Process First, after that run this process again. \n", app_name, pid);
-        printf("************************************************************ \n");
+        printf(KNRM"************************************************************ \n");
         return EXIT_FAILURE;
     }
     //Select mode
     //Increment active consumers
     ptr_buff_glob_var->active_consumers++;
+    ptr_buff_glob_var->historical_consumers++;
 
     if(isAutoMode)
     {
@@ -340,14 +377,20 @@ int main(int argc, char *argv[]){
     {
         ManualConsumerProcess();
     }
-    
-    clock_t end = clock();
-    double time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
+ 
+    // End timers
+    times(&end_tms);
+    endProcess = clock();
+    gettimeofday(&tv2, NULL);
 
-    //Exit rutine (save statistics, etc)
-    ExitProcess();
+    // Calculating times
+    double elapsed_time = (double) (tv2.tv_usec - tv1.tv_usec) / 1000000 + (double) (tv2.tv_sec - tv1.tv_sec);
+    double process_time = (double)(endProcess - beginProcess) / CLOCKS_PER_SEC;
+    double sys_time = (double)(end_tms.tms_stime - start_tms.tms_stime)/100;
+    double usr_time = (double)(end_tms.tms_utime - start_tms.tms_utime)/100;
+    double suspended_time = elapsed_time - process_time;
 
-
+    ExitProcess(elapsed_time,process_time, sys_time, usr_time );
 
     //Release resources (mem, etc)
     sem_close(sem_consumer);
@@ -356,5 +399,19 @@ int main(int argc, char *argv[]){
     sem_close(sem_finalize);
     munmap(ptr_buff_glob_var, sizeof(Global_Var));
     munmap(ptr_buff_glob_mess, (message_count*sizeof(Global_Var)));
+    printf(KNRM"************************************************************ \n");
+    printf(KCYN"%s : %i - Statistics: \n", app_name, pid);
+    printf(KBLU"%s : %i - Total time %f \n", app_name, pid,  elapsed_time);
+    printf("%s : %i - Suspended time %f \n", app_name, pid, suspended_time);
+    printf("%s : %i \t- Wait time %f \n", app_name, pid, sleep_timer);  
+    printf("%s : %i \t- Blocked time %f \n", app_name, pid, blocked_timer);  
+    printf("%s : %i \t- Other Time %f \n", app_name, pid, (suspended_time - sleep_timer - blocked_timer));  
+    printf("%s : %i - Processing time %f \n", app_name, pid, process_time);
+    printf("%s : %i \t- System time %f \n", app_name, pid, sys_time);
+    printf("%s : %i \t- User time %f \n",  app_name, pid, usr_time);
+    printf("%s : %i - Total Message Read: %i \n", app_name, pid, total_message_readed);
+    printf(KNRM"************************************************************ \n");
+    printf(KRED"%s : %i - Consumer Process Ends \n", app_name, pid);
+
     return 0; 
 } 

@@ -46,3 +46,8 @@ unsigned int expRandom(double meanSeconds){
   double random_ = expGenerator((double)meanSeconds);
   return (unsigned int) (random_*1000000);
 }
+
+short int magicRandom(void){
+  short int magic_num =  (short int)(rand() % 7);
+  return magic_num;
+}

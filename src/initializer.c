@@ -12,41 +12,13 @@
 #include <getopt.h>
 #include <sys/types.h>
 
-#define BUFFER_GLOB_SUFIX "_GLOBAL"
+#include "../include/common.h"
 
 //Begin Region Global Variables 
 char *app_name = NULL;
 char *buffer_message_name = NULL;
 int pid = 0;
 //End Region Global Varibales
-
-typedef struct Global_Var
-{
-    int buffer_message_size; //Use for the remap on the consumer and producer process
-    int active_consumers;
-    int active_productors;
-    int historical_consumers;
-    int historical_buffer_messages; //Historical count of messages inserted into the buffer
-    int historical_productor;
-    int last_read_position;
-    int last_write_position;
-    int consumers_delete_by_key;
-    double total_cpu_time;  //Sumatory of all process CPU time (Producer and Consumers)
-    double total_wait_time; //Total Time wait by the process (producers and consumers) (poison and exponential generators )
-    double total_block_time; //Total Time blocked by semaphores (producers and consumers)
-    double total_kernel_time; //Total Time in Kernel mode (producers and consumers)
-    double total_user_time; //Total Time in user mode (producers and consumers)
-    short int finalize;
-} Global_Var;
-
-typedef struct Global_Message
-{
-    pid_t pid;
-    time_t date_time;
-    short int magic_number;
-    char message[20];
-} Global_Message;
-
 
 /**
  * Initialize the semaphores needed by the system
@@ -59,10 +31,11 @@ int InitilizeSemaphores(int messageCount)
         sem_open("SEM_BUFF_CONSUMER", O_CREAT | O_EXCL, 0644, 0) == SEM_FAILED ||
         sem_open("SEM_BUF_GLOB_READ_INDEX", O_CREAT | O_EXCL, 0644, 1) == SEM_FAILED ||
         sem_open("SEM_BUF_GLOB_WRITE_INDEX", O_CREAT | O_EXCL, 0644, 1) == SEM_FAILED ||
-        sem_open("SEM_BUF_GLOB_DISABLE_PROCESS", O_CREAT, 0644, 1) == SEM_FAILED ||
-        sem_open("SEM_BUF_GLOB_FINALIZER", O_CREAT, 0644, 0) == SEM_FAILED)
+        sem_open("SEM_BUF_GLOB_DISABLE_PROCESS", O_CREAT | O_EXCL, 0644, 1) == SEM_FAILED ||
+        sem_open("SEM_BUF_GLOB_FINALIZER", O_CREAT | O_EXCL, 0644, 0) == SEM_FAILED)
     {
         perror("Error");
+        printf("%s : %i - Please Run Finalizer with -ff flag \n", app_name, pid);
         return EXIT_FAILURE;
     }
     printf("%s : %i - End Semaphores Initializing \n", app_name, pid);
@@ -151,8 +124,7 @@ void print_help(void)
 	printf("  Options:\n");
 	printf("   -h --help                 Print this help\n");
 	printf("   -b --buffer_name          Buffer name for attach the process, Need to be diferent to empty\n");
-    printf("   -s --seconds              Time in seconds for random algorithm waiting time generator, Need to be greater than zero \n");
-    printf("   -m --mode                 Execution Mode: M = manual | A = automatic \n");
+    printf("   -s --size                 Maximum amount of messages the buffer will hold \n");    
 	printf("\n");
 }
 
@@ -166,10 +138,11 @@ int main(int argc, char *argv[]) {
     app_name = argv[0];
     app_name = app_name+2; //Delete ./ From the app Name
     pid = getpid();
+    printf("%s : %i - Starting Initializer Process... \n", app_name, pid);
     int value, option_index = 0;	
     int message_count = 0;
     /* Try to process all command line arguments */
-	while ((value = getopt_long(argc, argv, "b:s:h", long_options, &option_index)) != -1) {
+	while ((value = getopt_long(argc, argv, "b:s:ff:h", long_options, &option_index)) != -1) {
 		switch (value) {
 			case 'b':
                 //Read buffer message name
