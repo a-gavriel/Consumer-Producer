@@ -221,6 +221,7 @@ int main(int argc, char *argv[]) {
         printf("%s : %i - Wait untill all process (consumers/producres) end ... \n", app_name, pid);
         //Wait all consumer and producers ends
         sem_wait(sem_finalize);
+        printf("%s : %i - All process (consumers/producres) end ... \n", app_name, pid);
         ShowStatistics(actual_messages);
         Free();
     }

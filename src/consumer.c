@@ -159,21 +159,20 @@ short int ReadMessage()
         last_read_position = -1;
     }
     int positon_to_read = last_read_position + 1;
-    printf(KNRM"%s : %i - Read Buffer Position: %i \n", app_name, pid, positon_to_read);
     //Process the message readed
     short int magic_number = ptr_buff_glob_mess[positon_to_read].magic_number;
     pid_t message_pit = ptr_buff_glob_mess[positon_to_read].pid;
     time_t message_time = ptr_buff_glob_mess[positon_to_read].date_time;
     int active_producers =  ptr_buff_glob_var->active_productors;
     int active_consumers   = ptr_buff_glob_var->active_consumers;
-    //
     total_message_readed++;
-    printf(KCYN"\t DateTime:");
+    printf(KGRN"%s : %i - Read Buffer Position: %i \n", app_name, pid, positon_to_read);
+    printf(KCYN"\t Active Consumers: %i \n", active_consumers);
+    printf("\t Active Producers: %i \n", active_producers);
+    printf("\t DateTime : ");
     PrintDateTime(message_time);
     printf("\t Process PID: %i \n", message_pit);
     printf("\t Magic Number: %i \n", magic_number);
-    printf("Active Consumers: %i \n", active_consumers);
-    printf("Active Producers: %i \n", active_producers);
     printf(KNRM"************************************************************ \n");
     //Set the new last read position index
     ptr_buff_glob_var->last_read_position = positon_to_read;
@@ -190,7 +189,7 @@ void AutomatedConsumerProcess()
     while(flag)
     {
         unsigned int sleep = poissonRandom(mean_seconds);
-        printf(KCYN"%s : %i - Waiting %u s \n", app_name, pid, sleep);
+        printf(KCYN"%s : %i - Waiting %u s \n", app_name, pid, sleep/1000000);
         sleep_timer += ((double) sleep)/1000000;; //process total sleep time
         //Seelp the Process
         usleep(sleep);
@@ -229,6 +228,7 @@ void ManualConsumerProcess()
             printf(KRED"%s : %i - Start Finalize Process | Reason: Global Var Finalize Process \n", app_name, pid);
             break;
         }
+        printf(KRED"%s : %i - Please Press Enter... \n", app_name, pid);
         if(getchar() == 10)
         {  
             magicNumber = ReadMessage();
