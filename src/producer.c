@@ -9,10 +9,11 @@
 #include <unistd.h> 
 #include <getopt.h>
 #include <sys/types.h>
-#include <time.h>
 #include <stdbool.h>
 #include <semaphore.h>
-#include <sys/times.h>
+#include <time.h>      // Date Time
+#include <sys/times.h> // User Time System Time
+#include <sys/time.h>  // Elapsed Time
 
 #include "../include/randomGenerators.h"
 #include "../include/common.h"
@@ -228,10 +229,16 @@ int processloop(Global_Var *ptr_buff_glob_var , Global_Message *ptr_buff_glob_me
 }
 
 int main(int argc, char *argv[]){ 
-  clock_t beginProcess = clock();
-  time_t beginTime = time(NULL);
-  struct tms start_tms;
+  //Time Vars      -------------------------
+  clock_t beginProcess,endProcess;
+  struct tms start_tms, end_tms;
+  struct timeval  tv1, tv2;
+
+  // Start timers
+  beginProcess = clock();  
   times(&start_tms);
+  gettimeofday(&tv1, NULL);
+  // End Time Vars -------------------------
 
   static struct option long_options[] = {
     {"buffer_name", required_argument, 0, 'b'},
@@ -281,15 +288,20 @@ int main(int argc, char *argv[]){
 
   //Exit rutine (save statistics, etc)
   ExitProcess();
-  struct tms end_tms;
-  times(&end_tms);
-  clock_t endProcess = clock();
-  time_t endTime = time(NULL);
 
-  time_t time_Time = endTime - beginTime;
-  clock_t time_process = (endProcess - beginProcess) / CLOCKS_PER_SEC;
-  clock_t cpu_time = end_tms.tms_cutime - start_tms.tms_cutime;
-  clock_t utime = end_tms.tms_utime - start_tms.tms_utime;
+
+  // End timers
+  times(&end_tms);
+  endProcess = clock();
+  gettimeofday(&tv2, NULL);
+
+  // Calculating times
+  double elapsed_time = (double) (tv2.tv_usec - tv1.tv_usec) / 1000000 + (double) (tv2.tv_sec - tv1.tv_sec);
+  double process_time = (double)(endProcess - beginProcess) / CLOCKS_PER_SEC;
+  double sys_time = (double)(end_tms.tms_stime - start_tms.tms_stime)/100;
+  double usr_time = (double)(end_tms.tms_utime - start_tms.tms_utime)/100;
+  double suspended_time = elapsed_time - process_time;
+
 
   //Release resources (mem, etc)
   sem_close(sem_consumer);
@@ -301,10 +313,11 @@ int main(int argc, char *argv[]){
   printf("************************************************************ \n");
   printf("%s : %i - Producer Process Ends \n", app_name, pid);
 
-  printf("total time %jd\n\n",  time_Time);
-  printf("clock time %jd\n\n",  (intmax_t)time_process);
-  printf("cpu time %jd\n\n",  (intmax_t)cpu_time);
-  printf("cpu Utime %jd\n\n", (intmax_t)utime);
+  printf("Total time %f \n\n",  elapsed_time);
+  printf("- Suspended time %f \n\n",  suspended_time);  
+  printf("- Processing time %f \n\n",  process_time);
+  printf("  - System time %f \n\n",  sys_time);
+  printf("  - User time %f \n\n", usr_time);
 
   return 0; 
 } 
