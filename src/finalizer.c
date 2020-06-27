@@ -82,7 +82,8 @@ int InitializeBuffers()
     printf("%s : %i - Created the Shared Memory Object \n", app_name, pid);
 
     ptr_buff_glob_var = (Global_Var *)mmap(NULL, sizeof(Global_Var), PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0);
-    if (ptr_buff_glob_var == MAP_FAILED){
+    if (ptr_buff_glob_var == MAP_FAILED)
+    {
         perror("Error during mapping process");
         return EXIT_FAILURE;
     } 
@@ -125,6 +126,32 @@ int Free()
     sem_close(sem_consumer);
     sem_close(sem_producer);
     sem_close(sem_finalize);
+    return EXIT_SUCCESS;
+}
+
+int ShowStatistics(int messages)
+{
+    printf("%s : %i - Total Produced Messages: %i \n", app_name, pid, ptr_buff_glob_var->historical_buffer_messages);
+    printf("%s : %i - Total Messages left in buffer: %i \n", app_name, pid, messages);
+    printf("%s : %i - Total Producers Created: %i \n",  app_name, pid, ptr_buff_glob_var->historical_productor);
+    printf("%s : %i - Total Consumers Created: %i \n", app_name, pid, ptr_buff_glob_var->historical_consumers);
+    printf("%s : %i - Total Consumers Deleted by Key: %i \n", app_name, pid, ptr_buff_glob_var->consumers_delete_by_key);
+
+    double elapsed_time = ptr_buff_glob_var->total_cpu_time;
+    double sleep_time = ptr_buff_glob_var->total_wait_time;
+    double blocked_time = ptr_buff_glob_var->total_block_time;
+    double sys_time = ptr_buff_glob_var->total_kernel_time;
+    double usr_time = ptr_buff_glob_var->total_user_time;
+    double process_time = sys_time + usr_time;
+    double total_suspended_time = elapsed_time - process_time;
+
+    printf("%s : %i - Accumulated Total time %f \n", app_name, pid, elapsed_time);
+    printf("%s : %i - Accumulated Suspended time %f \n", app_name, pid, total_suspended_time);
+    printf("%s : %i \t- Wait time %f \n", app_name, pid, sleep_time);  
+    printf("%s : %i \t- Blocked time %f \n", app_name, pid, blocked_time);    
+    printf("%s : %i - Processing time %f \n", app_name, pid, process_time);
+    printf("%s : %i \t- System time %f \n", app_name, pid, sys_time);
+    printf("%s : %i \t- User time %f \n", app_name, pid, usr_time);
     return EXIT_SUCCESS;
 }
 
@@ -183,6 +210,8 @@ int main(int argc, char *argv[]) {
     else
     {
         //Set Finalize Flag
+        int actual_messages = 0;
+        sem_getvalue(sem_consumer, &actual_messages); //Get the actuall messages inside the buffer
         ptr_buff_glob_var->finalize = 1;
         //Wake up consumer/producers wainting if the buffer is empty of full;
         sem_post(sem_consumer);
@@ -192,6 +221,7 @@ int main(int argc, char *argv[]) {
         printf("%s : %i - Wait untill all process (consumers/producres) end ... \n", app_name, pid);
         //Wait all consumer and producers ends
         sem_wait(sem_finalize);
+        ShowStatistics(actual_messages);
         Free();
     }
     return EXIT_SUCCESS; 
