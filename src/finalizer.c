@@ -95,9 +95,15 @@ int DestroySemaphores()
 {
     printf("************************************************************ \n");
     printf("%s : %i - Closing all Semaphores \n", app_name, pid);
-    if(sem_unlink("SEM_BUFF_PRODUCER") == -1 || sem_unlink("SEM_BUFF_CONSUMER") == -1 ||
-        sem_unlink("SEM_BUF_GLOB_READ_INDEX") == -1 || sem_unlink("SEM_BUF_GLOB_WRITE_INDEX") == -1 || 
-        sem_unlink("SEM_BUF_GLOB_DISABLE_PROCESS") == -1 || sem_unlink("SEM_BUF_GLOB_FINALIZER") == -1)
+    int unlinkProducer = sem_unlink("SEM_BUFF_PRODUCER");
+    int unlinkConsumer = sem_unlink("SEM_BUFF_CONSUMER");
+    int unlinkGlobR = sem_unlink("SEM_BUF_GLOB_READ_INDEX") ;
+    int unlinkGlobW = sem_unlink("SEM_BUF_GLOB_WRITE_INDEX");
+    int unlinkDisable = sem_unlink("SEM_BUF_GLOB_DISABLE_PROCESS");
+    int unlinkFinalizer = sem_unlink("SEM_BUF_GLOB_FINALIZER");
+
+    if( unlinkProducer == -1 || unlinkConsumer == -1 ||unlinkGlobR == -1 || 
+        unlinkGlobW == -1 || unlinkDisable == -1 || unlinkFinalizer == -1)
     {
         perror("Error");
         return EXIT_FAILURE;

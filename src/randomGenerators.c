@@ -48,6 +48,6 @@ unsigned int expRandom(double meanSeconds){
 }
 
 short int magicRandom(void){
-  short int magic_num =  (short int)(rand() % 6);
+  short int magic_num =  (short int)(rand() % 7);
   return magic_num;
 }

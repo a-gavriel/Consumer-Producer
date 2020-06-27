@@ -9,16 +9,20 @@
 #include <unistd.h> 
 #include <getopt.h>
 #include <sys/types.h>
-#include <time.h>
 #include <stdbool.h>
 #include <semaphore.h>
+#include <time.h>      // Date Time
+#include <sys/times.h> // User Time System Time
+#include <sys/time.h>  // Elapsed Time
 
 #include "../include/randomGenerators.h"
 #include "../include/common.h"
 
 bool flag = true;
 char *app_name = NULL;
-double middleSeconds = -1;
+double meanSeconds = -1;
+double blocked_timer = 0.0;
+double sleep_timer = 0.0;
 char *buffer_message_name = NULL;
 bool isAutoMode = false;
 Global_Var *ptr_buff_glob_var = NULL;
@@ -38,6 +42,24 @@ sem_t *sem_consumer = NULL;
 sem_t *sem_producer = NULL;
 sem_t *sem_last_wrote = NULL;
 sem_t *sem_disable_process = NULL;
+
+// -------------------------------------------------------------------------------------
+// Creating Producer
+
+
+/** 
+ * \brief Print help for this application
+ */
+void print_help(void)
+{
+  printf("\n Usage: %s [OPTIONS]\n\n", app_name);
+  printf("  Options:\n");
+  printf("   -h --help                 Print this help\n");
+  printf("   -b --buffer_name          Buffer name for attach the process, Need to be diferent to empty\n");
+  printf("   -s --seconds              Time in seconds for random algorithm waiting time generator, Need to be greater than zero \n");  
+  printf("\n");
+}
+
 // End Semaphore Region
 int InitilizeSemaphores()
 {
@@ -59,85 +81,6 @@ int InitilizeSemaphores()
     return EXIT_SUCCESS;
 }
 
-/**
- * \brief Print help for this application
- */
-void print_help(void)
-{
-  printf("\n Usage: %s [OPTIONS]\n\n", app_name);
-  printf("  Options:\n");
-  printf("   -h --help                 Print this help\n");
-  printf("   -b --buffer_name          Buffer name for attach the process, Need to be diferent to empty\n");
-  printf("   -s --seconds              Time in seconds for random algorithm waiting time generator, Need to be greater than zero \n");  
-  printf("\n");
-}
-
-/**
- * Exit Sequence
- * **/
-void ExitProcess()
-{
-  sem_wait(sem_disable_process);
-  printf("%s : %i - Closing Process \n", app_name, pid);
-  //If active_productors = 0 and activer_consumers = 1, I am the last one
-  if(ptr_buff_glob_var->active_productors == 1 && ptr_buff_glob_var->active_consumers == 0)
-  {
-      printf("%s : %i - Last process closed \n", app_name, pid);
-      sem_post(sem_finalize);
-  }
-  ptr_buff_glob_var->active_productors--;
-  sem_post(sem_disable_process);
-  sem_post(sem_producer);
-}
-
-/**
- * Read Message from buffer
-*/
-short int WriteMessage()
-{
-    printf("Call WriteMessage Function\n");
-    //Start if the buffer has message
-    sem_wait(sem_producer);
-    //Block others consumers
-    sem_wait(sem_last_wrote);
-    printf("************************************************************ \n");
-    printf("New Message to Write: \n");
-    int last_write_position = ptr_buff_glob_var->last_write_position;
-    int max_messages = ptr_buff_glob_var->buffer_message_size;
-    //Validate if the last position was the end of the buffer, if true reset to start position
-    if (last_write_position == (max_messages - 1))
-    {
-        last_write_position = -1;
-    }
-    int positon_to_write = last_write_position + 1;
-    //Set the new last read position index
-    ptr_buff_glob_var->last_write_position = positon_to_write;
-    //Release for other consumer process
-    sem_post(sem_last_wrote);
-
-
-    printf("position to write %d\n",positon_to_write);
-
-    //Process the message readed
-    short int magic_number = magicRandom();
-    ptr_buff_glob_mess[positon_to_write].magic_number = magic_number;
-    ptr_buff_glob_mess[positon_to_write].pid = pid;
-    ptr_buff_glob_mess[positon_to_write].date_time = time(NULL);
-    printf("\t Magic Number: %i \n",magic_number);
-    
-    //Producers process can write one more message
-    sem_post(sem_consumer);
-    return magic_number;
-}
-
-/**
- * Read Finalizar Global (Buffer) Variable
-*/
-bool ValidateFinalizerSignal()
-{
-    //If finalizar global variable is 1 return true
-    return true;
-}
 
 int SyncBuffer()
 {  
@@ -182,28 +125,133 @@ int SyncBuffer()
     return EXIT_SUCCESS;
 }
 
+// Creating Producer
+// -------------------------------------------------------------------------------------
+
+/**
+ * Exit Sequence
+ * **/
+void ExitProcess(double elapsed_time,double process_time, double sys_time, double usr_time )
+{
+  sem_wait_timed(sem_disable_process,&blocked_timer);
+  printf("%s : %i - Closing Process \n", app_name, pid);
+  //If active_productors = 1 and activer_consumers = 0, I am the last one
+  if(ptr_buff_glob_var->active_productors == 1 && ptr_buff_glob_var->active_consumers == 0)
+  {
+      printf("%s : %i - Last process closed \n", app_name, pid);
+      sem_post(sem_finalize);
+  }
+  ptr_buff_glob_var->active_productors--;
+
+  ptr_buff_glob_var->total_cpu_time += elapsed_time;
+  ptr_buff_glob_var->total_wait_time += sleep_timer;
+  ptr_buff_glob_var->total_block_time += blocked_timer;
+  ptr_buff_glob_var->total_kernel_time  += sys_time;
+  ptr_buff_glob_var->total_user_time += usr_time;
+
+  sem_post(sem_disable_process);
+  sem_post(sem_producer);
+}
+
+/**
+ * Write Message to buffer
+*/
+short int WriteMessage(int max_messages)
+{
+    printf("Call WriteMessage Function\n");
+    //Start if the buffer has message
+    sem_wait_timed(sem_producer,&blocked_timer);
+    //Block others consumers
+    sem_wait_timed(sem_last_wrote,&blocked_timer);
+    
+    printf("New Message to Write: \n");
+
+    // READING/WRITING GLOBAL BUFFER
+
+    int historical_buffer_messages = ptr_buff_glob_var->historical_buffer_messages;
+    ptr_buff_glob_var->historical_buffer_messages = historical_buffer_messages +1;
+
+    int active_productors =  ptr_buff_glob_var->active_productors;
+    int active_consumers   = ptr_buff_glob_var->active_consumers;
+    
+    //Validate if the last position was the end of the buffer, if true reset to start position
+    int last_write_position = ptr_buff_glob_var->last_write_position;    
+    if (last_write_position == (max_messages - 1)){
+        last_write_position = -1;
+    }
+    int positon_to_write = last_write_position + 1;
+    //Set the new last read position index
+    ptr_buff_glob_var->last_write_position = positon_to_write;
+    //Release for other producer process    
+    sem_post(sem_last_wrote);
+
+    // WRITING TO MESSAGE BUFFER
+
+    printf("\t Position to write %d\n",positon_to_write);
+    //Process the message readed
+    short int magic_number = magicRandom();
+    ptr_buff_glob_mess[positon_to_write].magic_number = magic_number;
+    ptr_buff_glob_mess[positon_to_write].pid = pid;
+    time_t now = time(NULL);
+    ptr_buff_glob_mess[positon_to_write].date_time = now;
+    struct tm tm = *localtime(&now);
+    printf("\t Time: %d-%02d-%02d %02d:%02d:%02d\n", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+    printf("\t Magic Number: %i \n",magic_number);
+    printf("Active Consumers: %d \n", active_consumers);
+    printf("Active Productors: %d \n", active_productors);
+    
+    //Producers process can write one more message
+    sem_post(sem_consumer);
+    return magic_number;
+}
+
+int addProducerCounter(Global_Var *ptr_buff_glob_var){
+  int active_productors = ptr_buff_glob_var->active_productors;
+  ptr_buff_glob_var->active_productors = active_productors + 1;
+
+  int historical_productor = ptr_buff_glob_var->historical_productor;
+  ptr_buff_glob_var->historical_productor = historical_productor + 1;
+
+  return historical_productor;
+}
 
 int processloop(Global_Var *ptr_buff_glob_var , Global_Message *ptr_buff_glob_mess, double wait_mean){
-
+  srand(time(0));
+  int productor_number = addProducerCounter(ptr_buff_glob_var);
+  unsigned int wait_time;
+  int max_messages = ptr_buff_glob_var->buffer_message_size;
   //short int finalizeFlag = ptr_buff_glob_var->finalize;
   while(flag){
+    printf("************************************************************ \n");
+    printf("- Productor #%d\n", productor_number);
     if(ptr_buff_glob_var->finalize == 1){
       flag = false;
       //Finalize process by Finalizaer Global Var
       printf("%s : %i - Start Finalize Process | Reason: Global Var Finalize Process \n", app_name, pid);
       break;
-    }else{
-      unsigned int wait_time = expRandom(wait_mean);
+    }else{      
+      wait_time = expRandom(wait_mean);
+      sleep_timer += ((double) wait_time)/1000000;
       printf("Waiting %u \n",wait_time );
       usleep(wait_time);
-      WriteMessage();
+      WriteMessage(max_messages);
     }
   }
   return 0;
 }
 
 int main(int argc, char *argv[]){ 
-  clock_t begin = clock();
+  //Time Vars      -------------------------
+  clock_t beginProcess,endProcess;
+  struct tms start_tms, end_tms;
+  struct timeval  tv1, tv2;
+
+  // Start timers
+  beginProcess = clock();  
+  times(&start_tms);
+  gettimeofday(&tv1, NULL);
+  // End Time Vars -------------------------
+
   static struct option long_options[] = {
     {"buffer_name", required_argument, 0, 'b'},
     {"seconds", required_argument, 0, 's'},
@@ -221,7 +269,7 @@ int main(int argc, char *argv[]){
         buffer_message_name = strdup(optarg);
         break;
       case 's':
-        sscanf(optarg, "%lf", &middleSeconds);
+        sscanf(optarg, "%lf", &meanSeconds);
         break;
       case 'h':
         print_help();
@@ -230,7 +278,7 @@ int main(int argc, char *argv[]){
         break;
     }
   }
-  if (buffer_message_name == NULL || strcmp("", buffer_message_name) == 0 || middleSeconds <= 0 )
+  if (buffer_message_name == NULL || strcmp("", buffer_message_name) == 0 || meanSeconds <= 0 )
   {
     printf("%s : %i - Please use -h to see right parameters format \n", app_name, pid);
     return EXIT_FAILURE;
@@ -247,17 +295,22 @@ int main(int argc, char *argv[]){
       return EXIT_FAILURE;
   }
 
-  srand(time(0));
-    
-  processloop(ptr_buff_glob_var , ptr_buff_glob_mess, middleSeconds);
+  processloop(ptr_buff_glob_var , ptr_buff_glob_mess, meanSeconds);
 
-  clock_t end = clock();
-  double time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
+  // End timers
+  times(&end_tms);
+  endProcess = clock();
+  gettimeofday(&tv2, NULL);
+
+  // Calculating times
+  double elapsed_time = (double) (tv2.tv_usec - tv1.tv_usec) / 1000000 + (double) (tv2.tv_sec - tv1.tv_sec);
+  double process_time = (double)(endProcess - beginProcess) / CLOCKS_PER_SEC;
+  double sys_time = (double)(end_tms.tms_stime - start_tms.tms_stime)/100;
+  double usr_time = (double)(end_tms.tms_utime - start_tms.tms_utime)/100;
+  double suspended_time = elapsed_time - process_time;
 
   //Exit rutine (save statistics, etc)
-  ExitProcess();
-
-
+  ExitProcess(elapsed_time,process_time, sys_time, usr_time );
 
   //Release resources (mem, etc)
   sem_close(sem_consumer);
@@ -266,7 +319,16 @@ int main(int argc, char *argv[]){
   sem_close(sem_finalize);
   munmap(ptr_buff_glob_var, sizeof(Global_Var));
   munmap(ptr_buff_glob_mess, (message_count*sizeof(Global_Var)));
+  printf("************************************************************ \n");
   printf("%s : %i - Producer Process Ends \n", app_name, pid);
+
+  printf("\nTotal time %f \n",  elapsed_time);
+  printf("- Suspended time %f \n",  suspended_time);
+  printf("  - Wait time %f \n", sleep_timer);  
+  printf("  - Blocked time %f \n", blocked_timer);    
+  printf("- Processing time %f \n",  process_time);
+  printf("  - System time %f \n",  sys_time);
+  printf("  - User time %f \n", usr_time);
 
   return 0; 
 } 

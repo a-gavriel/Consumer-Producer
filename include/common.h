@@ -1,6 +1,10 @@
 #include <sys/types.h>
+#include <semaphore.h>
+#include <sys/time.h>
 
 #define BUFFER_GLOB_SUFIX "_GLOBAL"
+
+#define MESSAGE_SIZE 20
 
 typedef struct Global_Var
 {
@@ -26,5 +30,16 @@ typedef struct Global_Message
     pid_t pid;
     time_t date_time;
     short int magic_number;
-    char message[20];
+    char message[MESSAGE_SIZE];
 } Global_Message;
+
+int sem_wait_timed(sem_t *sem, double *timer){
+    struct timeval  tv1, tv2;
+    int result;
+    gettimeofday(&tv1, NULL);
+    result = sem_wait(sem);
+    gettimeofday(&tv2, NULL);
+    double elapsed_time = (double) (tv2.tv_usec - tv1.tv_usec) / 1000000 + (double) (tv2.tv_sec - tv1.tv_sec);
+    *timer += elapsed_time;
+    return result;
+}
