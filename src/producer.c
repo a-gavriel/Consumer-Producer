@@ -28,6 +28,7 @@ bool isAutoMode = false;
 Global_Var *ptr_buff_glob_var = NULL;
 Global_Message *ptr_buff_glob_mess = NULL;
 pid_t pid = 0;
+int num_messages = 0;
 int message_count = 0;
 
 //Begin Semaphore Region
@@ -106,8 +107,8 @@ int SyncBuffer()
         return EXIT_FAILURE;
     }
     //Read the message buffer size (max of message)
-    int message_count = ptr_buff_glob_var->buffer_message_size;
-    printf("%i \n", message_count);
+    int num_messages = ptr_buff_glob_var->buffer_message_size;
+    printf("%i \n", num_messages);
 
     //Global Message Buffer
     printf("%s : %i - Sync the Global Message Buffer \n", app_name, pid);
@@ -117,7 +118,7 @@ int SyncBuffer()
         perror("Error creating the Shared Memory Object: Global Message Buffer");
         return EXIT_FAILURE;
     } 
-    ptr_buff_glob_mess = (Global_Message *)mmap(NULL, (message_count * sizeof(Global_Message)), PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    ptr_buff_glob_mess = (Global_Message *)mmap(NULL, (num_messages * sizeof(Global_Message)), PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if (ptr_buff_glob_mess == MAP_FAILED){
         perror("Error during mapping process: Global Message Buffer");
         return EXIT_FAILURE;
@@ -168,11 +169,11 @@ short int WriteMessage(int max_messages)
 
     // READING/WRITING GLOBAL BUFFER
 
-    int historical_buffer_messages = ptr_buff_glob_var->historical_buffer_messages;
-    ptr_buff_glob_var->historical_buffer_messages = historical_buffer_messages +1;
+    ptr_buff_glob_var->historical_buffer_messages++;
+    message_count++;
 
     int active_productors =  ptr_buff_glob_var->active_productors;
-    int active_consumers   = ptr_buff_glob_var->active_consumers;
+    int active_consumers  =  ptr_buff_glob_var->active_consumers;
     
     //Validate if the last position was the end of the buffer, if true reset to start position
     int last_write_position = ptr_buff_glob_var->last_write_position;    
@@ -205,19 +206,10 @@ short int WriteMessage(int max_messages)
     return magic_number;
 }
 
-int addProducerCounter(Global_Var *ptr_buff_glob_var){
-  int active_productors = ptr_buff_glob_var->active_productors;
-  ptr_buff_glob_var->active_productors = active_productors + 1;
-
-  int historical_productor = ptr_buff_glob_var->historical_productor;
-  ptr_buff_glob_var->historical_productor = historical_productor + 1;
-
-  return historical_productor;
-}
-
 int processloop(Global_Var *ptr_buff_glob_var , Global_Message *ptr_buff_glob_mess, double wait_mean){
   srand(time(0));
-  int productor_number = addProducerCounter(ptr_buff_glob_var);
+  ptr_buff_glob_var->active_productors += 1;
+  int productor_number = ptr_buff_glob_var->historical_productor++;
   unsigned int wait_time;
   int max_messages = ptr_buff_glob_var->buffer_message_size;
   //short int finalizeFlag = ptr_buff_glob_var->finalize;
@@ -318,17 +310,18 @@ int main(int argc, char *argv[]){
   sem_close(sem_disable_process);
   sem_close(sem_finalize);
   munmap(ptr_buff_glob_var, sizeof(Global_Var));
-  munmap(ptr_buff_glob_mess, (message_count*sizeof(Global_Var)));
+  munmap(ptr_buff_glob_mess, (num_messages*sizeof(Global_Var)));
   printf("************************************************************ \n");
   printf("%s : %i - Producer Process Ends \n", app_name, pid);
 
-  printf("\nTotal time %f \n",  elapsed_time);
-  printf("- Suspended time %f \n",  suspended_time);
-  printf("  - Wait time %f \n", sleep_timer);  
-  printf("  - Blocked time %f \n", blocked_timer);    
-  printf("- Processing time %f \n",  process_time);
-  printf("  - System time %f \n",  sys_time);
-  printf("  - User time %f \n", usr_time);
+  printf("\n%s : %i Total time %f \n",app_name, pid,  elapsed_time);
+  printf("%s : %i - Suspended time %f \n", app_name, pid, suspended_time);
+  printf("%s : %i   - Wait time %f \n", app_name, pid, sleep_timer);  
+  printf("%s : %i   - Blocked time %f \n",  app_name, pid, blocked_timer);   
+  printf("%s : %i   - Other time %f \n",app_name, pid,  suspended_time - sleep_timer - blocked_timer);    
+  printf("%s : %i - Processing time %f \n",  app_name, pid, process_time);
+  printf("%s : %i   - System time %f \n", app_name, pid, sys_time );
+  printf("%s : %i   - User time %f \n", app_name, pid, usr_time);
 
   return 0; 
 } 
