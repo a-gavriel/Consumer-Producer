@@ -78,7 +78,7 @@ int InitilizeSemaphores()
     if ( sem_producer == SEM_FAILED || sem_consumer == SEM_FAILED || sem_last_read == SEM_FAILED || 
         sem_disable_process == SEM_FAILED || sem_finalize == SEM_FAILED)
     {
-        perror(KRED"Error");
+        perror(KRED"Error initializing semaphores");
         return EXIT_FAILURE;
     }
     printf("%s : %i - End Semaphores Sync \n", app_name, pid);
@@ -148,7 +148,7 @@ short int ReadMessage()
     {
         return -1;
     }
-    printf(KBLU"%s : %i - Message Detected \n", app_name, pid);
+    printf(KMAG"%s : %i - Message Detected \n", app_name, pid);
     //Block others consumers
     sem_wait_timed(sem_last_read, &blocked_timer);
     printf(KNRM"************************************************************ \n");
@@ -401,7 +401,7 @@ int main(int argc, char *argv[]){
     munmap(ptr_buff_glob_mess, (message_count*sizeof(Global_Var)));
     printf(KNRM"************************************************************ \n");
     printf(KCYN"%s : %i - Statistics: \n", app_name, pid);
-    printf(KBLU"%s : %i - Total time %f \n", app_name, pid,  elapsed_time);
+    printf(KMAG"%s : %i - Total time %f \n", app_name, pid,  elapsed_time);
     printf("%s : %i - Suspended time %f \n", app_name, pid, suspended_time);
     printf("%s : %i \t- Wait time %f \n", app_name, pid, sleep_timer);  
     printf("%s : %i \t- Blocked time %f \n", app_name, pid, blocked_timer);  
