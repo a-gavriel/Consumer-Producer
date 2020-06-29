@@ -34,6 +34,7 @@ double blocked_timer = 0.0;
 double sleep_timer = 0.0;
 int total_message_readed = 0;
 int max_message = 0;
+int process_internal_id = 0;
 
 //Begin Semaphore Region
 sem_t *sem_consumer = NULL;
@@ -78,7 +79,7 @@ int InitilizeSemaphores()
     if ( sem_producer == SEM_FAILED || sem_consumer == SEM_FAILED || sem_last_read == SEM_FAILED || 
         sem_disable_process == SEM_FAILED || sem_finalize == SEM_FAILED)
     {
-        perror(KRED"Error");
+        perror(KRED"Error initializing semaphores");
         return EXIT_FAILURE;
     }
     printf("%s : %i - End Semaphores Sync \n", app_name, pid);
@@ -148,7 +149,7 @@ short int ReadMessage()
     {
         return -1;
     }
-    printf(KBLU"%s : %i - Message Detected \n", app_name, pid);
+    printf(KMAG"%s : %i - Message Detected \n", app_name, pid);
     //Block others consumers
     sem_wait_timed(sem_last_read, &blocked_timer);
     printf(KNRM"************************************************************ \n");
@@ -159,21 +160,21 @@ short int ReadMessage()
         last_read_position = -1;
     }
     int positon_to_read = last_read_position + 1;
-    printf(KNRM"%s : %i - Read Buffer Position: %i \n", app_name, pid, positon_to_read);
     //Process the message readed
     short int magic_number = ptr_buff_glob_mess[positon_to_read].magic_number;
     pid_t message_pit = ptr_buff_glob_mess[positon_to_read].pid;
     time_t message_time = ptr_buff_glob_mess[positon_to_read].date_time;
     int active_producers =  ptr_buff_glob_var->active_productors;
     int active_consumers   = ptr_buff_glob_var->active_consumers;
-    //
     total_message_readed++;
-    printf(KCYN"\t DateTime:");
+    printf("- Consumer #%d\n", process_internal_id);
+    printf(KGRN"%s : %i - Read Buffer Position: %i \n", app_name, pid, positon_to_read);
+    printf(KCYN"\t Active Consumers: %i \n", active_consumers);
+    printf("\t Active Producers: %i \n", active_producers);
+    printf("\t DateTime : ");
     PrintDateTime(message_time);
     printf("\t Process PID: %i \n", message_pit);
     printf("\t Magic Number: %i \n", magic_number);
-    printf("Active Consumers: %i \n", active_consumers);
-    printf("Active Producers: %i \n", active_producers);
     printf(KNRM"************************************************************ \n");
     //Set the new last read position index
     ptr_buff_glob_var->last_read_position = positon_to_read;
@@ -190,7 +191,7 @@ void AutomatedConsumerProcess()
     while(flag)
     {
         unsigned int sleep = poissonRandom(mean_seconds);
-        printf(KCYN"%s : %i - Waiting %u s \n", app_name, pid, sleep);
+        printf(KCYN"%s : %i - Waiting %f s \n", app_name, pid, (double)sleep/1000000);
         sleep_timer += ((double) sleep)/1000000;; //process total sleep time
         //Seelp the Process
         usleep(sleep);
@@ -229,6 +230,7 @@ void ManualConsumerProcess()
             printf(KRED"%s : %i - Start Finalize Process | Reason: Global Var Finalize Process \n", app_name, pid);
             break;
         }
+        printf(KRED"%s : %i - Please Press Enter... \n", app_name, pid);
         if(getchar() == 10)
         {  
             magicNumber = ReadMessage();
@@ -256,12 +258,6 @@ void ManualConsumerProcess()
 void ExitProcess(double elapsed_time,double process_time, double sys_time, double usr_time )
 {
     sem_wait_timed(sem_disable_process, &blocked_timer);
-    if (exit_by_key == 1)
-    {
-        ptr_buff_glob_var->consumers_delete_by_key++;
-        printf(KGRN"%s : %i - Increase Consumers Deleted By Key Count \n", app_name, pid);
-    }
-
     ptr_buff_glob_var->total_block_time += blocked_timer; // Total time process was blocked
     ptr_buff_glob_var->total_wait_time += sleep_timer; //Total time process was sleeping
 
@@ -276,8 +272,17 @@ void ExitProcess(double elapsed_time,double process_time, double sys_time, doubl
         sem_post(sem_finalize);
     }
     ptr_buff_glob_var->active_consumers--;
+
+    if (exit_by_key != 1)
+    {
+        sem_post(sem_consumer);
+    }
+    else
+    {
+        ptr_buff_glob_var->consumers_delete_by_key++;
+        printf(KGRN"%s : %i - Increase Consumers Deleted By Key Count \n", app_name, pid);
+    }
     sem_post(sem_disable_process);
-    sem_post(sem_consumer);
 }
 
 
@@ -366,8 +371,8 @@ int main(int argc, char *argv[]){
     }
     //Select mode
     //Increment active consumers
+    process_internal_id = ptr_buff_glob_var->historical_consumers++;
     ptr_buff_glob_var->active_consumers++;
-    ptr_buff_glob_var->historical_consumers++;
 
     if(isAutoMode)
     {
@@ -397,11 +402,13 @@ int main(int argc, char *argv[]){
     sem_close(sem_producer);
     sem_close(sem_disable_process);
     sem_close(sem_finalize);
+    sem_close(sem_last_read);
     munmap(ptr_buff_glob_var, sizeof(Global_Var));
     munmap(ptr_buff_glob_mess, (message_count*sizeof(Global_Var)));
+    //Show Statistics
     printf(KNRM"************************************************************ \n");
     printf(KCYN"%s : %i - Statistics: \n", app_name, pid);
-    printf(KBLU"%s : %i - Total time %f \n", app_name, pid,  elapsed_time);
+    printf(KMAG"%s : %i - Total time %f \n", app_name, pid,  elapsed_time);
     printf("%s : %i - Suspended time %f \n", app_name, pid, suspended_time);
     printf("%s : %i \t- Wait time %f \n", app_name, pid, sleep_timer);  
     printf("%s : %i \t- Blocked time %f \n", app_name, pid, blocked_timer);  
