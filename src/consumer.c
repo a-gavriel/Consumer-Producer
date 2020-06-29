@@ -397,8 +397,10 @@ int main(int argc, char *argv[]){
     sem_close(sem_producer);
     sem_close(sem_disable_process);
     sem_close(sem_finalize);
+    sem_close(sem_last_read);
     munmap(ptr_buff_glob_var, sizeof(Global_Var));
     munmap(ptr_buff_glob_mess, (message_count*sizeof(Global_Var)));
+    //Show Statistics
     printf(KNRM"************************************************************ \n");
     printf(KCYN"%s : %i - Statistics: \n", app_name, pid);
     printf(KMAG"%s : %i - Total time %f \n", app_name, pid,  elapsed_time);
