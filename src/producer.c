@@ -240,7 +240,7 @@ int processloop(Global_Var *ptr_buff_glob_var , Global_Message *ptr_buff_glob_me
     }else{      
       wait_time = expRandom(wait_mean);
       sleep_timer += ((double) wait_time)/1000000;
-      printf(KCYN"%s : %i - Waiting %u s \n", app_name, pid, wait_time/1000000);        
+      printf(KCYN"%s : %i - Waiting %f s \n", app_name, pid, (double)wait_time/1000000);        
       usleep(wait_time);
       printf(KCYN"%s : %i - Process Wake Up\n", app_name, pid);        
       if(ptr_buff_glob_var->finalize == 1){
@@ -353,8 +353,7 @@ int main(int argc, char *argv[]){
   printf("%s : %i - Processing time %f \n",  app_name, pid, process_time);
   printf("%s : %i   - System time %f \n", app_name, pid, sys_time );
   printf("%s : %i   - User time %f \n", app_name, pid, usr_time);
-
-
+  printf("%s : %i - Total Message Write: %i \n", app_name, pid, message_count);
   printf(KNRM"************************************************************ \n");
   printf(KRED"%s : %i - Producer Process Ends \n", app_name, pid);
 

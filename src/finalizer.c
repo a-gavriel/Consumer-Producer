@@ -215,6 +215,7 @@ int main(int argc, char *argv[]) {
         //Set Finalize Flag
         int actual_messages = 0;
         sem_getvalue(sem_consumer, &actual_messages); //Get the actuall messages inside the buffer
+        printf("Read sem_consumer %i \n", actual_messages);
         ptr_buff_glob_var->finalize = 1;
         //Wake up consumer/producers wainting if the buffer is empty of full;
         sem_post(sem_consumer);
